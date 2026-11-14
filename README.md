@@ -33,7 +33,7 @@ On macOS, grant **Microphone**, **Screen Recording** and **Accessibility** when 
 - **Type:** **Ctrl + Shift + Space** (**Cmd + Shift + Space**) opens the panel. "include my screen" decides whether STEVE sees your screen.
 - **Visuals:** ask "show me how merge sort works" or "explain how a car engine works in 3D". Click parts of a visual to ask about them.
 - **Tasks:** ask "research the best open-source rendering engines for my project". The Tasks tab shows progress, questions from the agent, and a Stop button. Agents can use a browser window you can watch.
-- **Do it for me:** ask "open my downloads folder and sort the PDFs into a folder". STEVE asks permission first, shows a red banner while in control, asks before anything consequential, and stops as soon as you move the mouse or press Esc.
+- **Do it for me:** ask "open my downloads folder and sort the PDFs into a folder". The first time, STEVE asks permission; choose **Always allow** to switch on autopilot so it never asks again (turn it off under Settings > Agents). It shows a red banner while in control, asks before anything consequential, and stops as soon as you move the mouse or press Esc.
 - **Memory:** "remember that I use DaVinci Resolve 20" or "forget that". Settings > Memory opens or deletes the memory folder. Screenshots are never stored.
 
 Any model role can be changed in Settings > Models, e.g. `anthropic:claude-sonnet-5-5`, or pointed at a local OpenAI-compatible server.
@@ -66,7 +66,7 @@ npm run build && npm run e2e    # end-to-end test of the real app (see below)
 npm run eval:pointing -- openai:gpt-6-luna anthropic:claude-sonnet-5-5   # pointing accuracy
 ```
 
-**End-to-end test (`npm run e2e`).** Launches the built app against a mock model server and drives it with the real mouse and keyboard (17 checks):
+**End-to-end test (`npm run e2e`).** Launches the built app against a mock model server and drives it with the real mouse and keyboard (18 checks):
 - **Pointing:** the cursor buddy follows the mouse, and a typed question with a screenshot makes it land on the exact pixel.
 - **Visuals:** the board loads Chart.js, Three.js, Mermaid and KaTeX with network access blocked; clicking a visual asks STEVE about it; a PubChem molecule renders.
 - **Memory and tasks:** memory and a background task work.
@@ -74,7 +74,7 @@ npm run eval:pointing -- openai:gpt-6-luna anthropic:claude-sonnet-5-5   # point
 - **Keys and talk keys:** API keys are stored encrypted; Ctrl+Alt is detected and Ctrl+Alt+T is ignored.
 - **Voice:** a full spoken turn runs (microphone to speech-to-text to answer to playback, sentence by sentence with pointing in sync, Deepgram faked inside the app), and Esc stops the voice mid-answer.
 
-By default the mock speaks Chat Completions (the local-server path); `E2E_API=responses npm run e2e` tests the Responses API that real OpenAI uses. Don't touch the computer while it runs. On macOS, give your terminal Screen Recording and Accessibility permission first. On Linux without a display, run it under Xvfb. Both modes pass 17/17 on Linux (Xvfb); run it once on Windows and once on macOS.
+By default the mock speaks Chat Completions (the local-server path); `E2E_API=responses npm run e2e` tests the Responses API that real OpenAI uses. Don't touch the computer while it runs. On macOS, give your terminal Screen Recording and Accessibility permission first. On Linux without a display, run it under Xvfb. Both modes pass 18/18 on Linux (Xvfb); run it once on Windows and once on macOS.
 
 **Pointing benchmark.** `eval/pointing/` ships 12 labelled cases from live websites (Wikipedia, GitHub, Hacker News, npm, Python docs), made by `npx electron eval/pointing/collect.mjs`. Add screenshots of the apps you care about (Blender, DaVinci Resolve) by hand as described in `eval/pointing/README.md`, then run it with your API keys in the environment.
 

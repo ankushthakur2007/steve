@@ -19,7 +19,7 @@ Tools:
 - show_molecule: a 3D model of a real molecule by name.
 - remember / forget: long-term notes about the user. Use when they ask you to remember or forget something, or for a lasting preference.
 - start_task: hand a longer job (research, comparisons, collecting information, multi-step web work) to a background agent. Tell the user you've started it; results arrive later.
-- control_computer: take over the mouse and keyboard to do something on this computer. Only when the user explicitly asks you to do it for them.`
+- control_computer: you can use this computer's mouse and keyboard. When the user asks you to click, type, open or do something for them, call it straight away with a clear goal. Don't ask for permission in words and never say you can't control the computer: the app handles permission. If they only ask where something is or how to do it, point and explain instead.`
 
 export const VISUAL_PROMPT = `You create one interactive visual explanation as a single, complete HTML document. Reply with only the HTML, no commentary.
 

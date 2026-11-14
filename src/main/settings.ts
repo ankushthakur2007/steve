@@ -14,6 +14,8 @@ export const defaults = {
   elevenVoiceId: 'JBFqnCBsd6RMkjVDRZzb',
   memory: true,
   browserAgent: true,
+  autopilot: false, // set by "Always allow": computer control starts without asking each time
+
   browserChannel: process.platform === 'win32' ? 'msedge' : 'chrome',
   mcpServers: {} as Record<string, McpServer>,
   onboarded: false,

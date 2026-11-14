@@ -275,8 +275,13 @@ await check('background task runs and its report shows in Tasks', async () => {
   await until('task report', () => panel.evaluate(() => document.getElementById('tasks')!.textContent!.includes('Report: Filament')))
 })
 
-// Native permission dialogs cannot be clicked by the test; answer "Allow" for it.
-await app.evaluate(({ dialog }) => { dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as any })
+// Native permission dialogs cannot be clicked by the test; answer "Always allow" for it and count them.
+await app.evaluate(({ dialog }) => {
+  const g = globalThis as any
+  g.dialogs = 0
+  dialog.showMessageBox = (async () => { g.dialogs++; return { response: 0, checkboxChecked: false } }) as any
+})
+const dialogs = () => app.evaluate(() => (globalThis as any).dialogs as number)
 const center = await nativePoint({ x: display.x + display.width / 2, y: display.y + display.height / 2 })
 
 await check('computer control: banner, real click at the right spot, fresh screenshot after each action', async () => {
@@ -288,6 +293,14 @@ await check('computer control: banner, real click at the right spot, fresh scree
   const second = seen.slice(from).filter(isControl)[1]
   if (!JSON.stringify(second?.messages ?? []).includes('New screenshot')) throw new Error('no fresh screenshot after the click')
   await until('banner hidden', () => overlay.evaluate(() => document.getElementById('banner')!.hidden))
+})
+
+await check('"Always allow" turns on autopilot: the next task starts without asking', async () => {
+  if (!JSON.parse(readFileSync(join(profile, 'settings.json'), 'utf8')).autopilot) throw new Error('autopilot not saved')
+  const before = await dialogs()
+  const from = await ask('control the computer: click the middle')
+  await until('control summary reached the chat model', () => seen.slice(from).some((s) => isChat(s) && textOf(s.last).includes('Clicked the middle')))
+  if ((await dialogs()) !== before) throw new Error('asked for permission again')
 })
 
 await check('computer control stops when the user moves the mouse', async () => {

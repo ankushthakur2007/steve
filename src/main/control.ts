@@ -1,14 +1,15 @@
 // Computer control: the agent model drives the real mouse and keyboard, one visible action at a time.
-// Safety: explicit permission per task, an on-screen banner, Esc or moving the mouse stops it,
-// and consequential actions need a confirmation dialog.
+// Safety: permission per task unless the user chose "Always allow" (autopilot), an on-screen banner,
+// Esc or moving the mouse stops it, and consequential actions always need a confirmation dialog.
 import type { Key } from '@nut-tree-fork/nut-js'
 import { generateText, isStepCount, tool, type ModelMessage } from 'ai'
-import { dialog, screen } from 'electron'
+import { app, dialog, screen } from 'electron'
 import { z } from 'zod'
 import { model } from './brain'
 import { capture, type Shot } from './capture'
 import { imageToScreen } from './coords'
 import { CONTROL_PROMPT } from './prompts'
+import { getSettings, saveSettings } from './settings'
 import { errorText, sleep } from './windows'
 
 let active: AbortController | null = null
@@ -44,16 +45,21 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
     return `Computer control is unavailable on this system: ${errorText(e)}`
   }
   const { Button, Key: Keys, keyboard, mouse, Point } = nut
-  const answer = await dialog.showMessageBox({
-    type: 'question',
-    buttons: ['Allow', 'Cancel'],
-    defaultId: 1,
-    cancelId: 1,
-    message: 'Let STEVE use your mouse and keyboard?',
-    detail: `Task: ${goal}\n\nPress Esc or move your mouse at any time to take back control.`,
-  })
-  if (answer.response !== 0) return 'The user declined to give control.'
   if (active) return 'STEVE is already controlling the computer.'
+  if (!getSettings().autopilot) {
+    // STEVE has no Dock icon, so without this macOS can open the dialog behind other apps.
+    if (process.platform === 'darwin') app.focus({ steal: true })
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Always allow', 'Allow once', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      message: 'Let STEVE use your mouse and keyboard?',
+      detail: `Task: ${goal}\n\n"Always allow" turns on autopilot: STEVE won't ask again (turn it off in Settings > Agents). It still asks before anything consequential.\n\nPress Esc or move your mouse at any time to take back control.`,
+    })
+    if (response === 2) return 'The user declined to give control.'
+    if (response === 0) saveSettings({ autopilot: true })
+  }
 
   const abort = new AbortController()
   active = abort
