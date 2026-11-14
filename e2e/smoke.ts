@@ -403,7 +403,7 @@ await check('computer control stops on Esc', async () => {
   await until('stopped', () => seen.slice(from).some((s) => isChat(s) && textOf(s.last).includes('took back control')), 10000)
 })
 
-await check('settings: a key saved in the panel is stored encrypted', async () => {
+await check('settings: a key saved in the panel is stored encrypted, and never written to the debug log', async () => {
   await until('idle', idle)
   await panel.evaluate(() => (document.querySelector('nav button[data-tab="settings"]') as HTMLElement).click())
   await until('settings loaded', () => panel.evaluate(() => (document.querySelector('#tab-settings [data-key="deepgram"]') as HTMLInputElement).placeholder !== ''))
@@ -413,6 +413,9 @@ await check('settings: a key saved in the panel is stored encrypted', async () =
   })
   await until('saved', () => panel.evaluate(() => document.getElementById('saved')!.textContent === 'Saved.'))
   if (readFileSync(join(profile, 'settings.json'), 'utf8').includes('dummy-deepgram-key')) throw new Error('key stored in plain text')
+  const debugLog = readFileSync(join(profile, 'logs', 'steve.log'), 'utf8')
+  if (!debugLog.includes('[settings] API keys saved ["deepgram"]')) throw new Error('the debug log did not record the save')
+  if (debugLog.includes('dummy-deepgram-key') || debugLog.includes('test-key')) throw new Error('an API key was written to the debug log')
   await panel.evaluate(() => (document.querySelector('nav button[data-tab="chat"]') as HTMLElement).click())
 })
 

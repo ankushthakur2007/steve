@@ -57,6 +57,7 @@ src/visual/steve3d.js  the 3D kit every 3D visual uses: lighting, materials, tag
   control.ts  mouse and keyboard (nut-js) with permission, banner and kill switches
   memory.ts   plain files: facts.md and daily conversation logs
   usage.ts    the cost meter (usage.json); prices in prices.ts
+  log.ts      the debug log (terminal and logs/steve.log) when run from source or with STEVE_DEBUG=1
 Windows: overlay per display (click-through), panel, board, hidden audio window
 ```
 
@@ -82,7 +83,7 @@ npm run eval:pointing -- openai:gpt-6-luna anthropic:claude-sonnet-5-5   # point
 - **Clipboard:** an unrelated question doesn't send the clipboard; "explain what I copied" does, and an answer can be copied back.
 - **Memory and tasks:** memory and a background task work.
 - **Computer control:** a real click lands on the right spot, a fresh screenshot follows each action, "Always allow" skips the question next time, and it stops on mouse movement and on Esc.
-- **Keys and talk keys:** API keys are stored encrypted; Ctrl+Alt is detected and Ctrl+Alt+T is ignored.
+- **Keys and talk keys:** API keys are stored encrypted and never written to the debug log; Ctrl+Alt is detected and Ctrl+Alt+T is ignored.
 - **Voice:** a full spoken turn runs (microphone to speech-to-text to answer to playback, sentence by sentence with pointing in sync, Deepgram faked inside the app), a hands-free reply is heard without the keys, and Esc stops the voice mid-answer.
 - **Cost:** tokens, listening time and speech are metered per service and shown in Settings > Usage, and a daily limit stops further model calls.
 
@@ -90,9 +91,29 @@ By default the mock speaks Chat Completions (the local-server path); `E2E_API=re
 
 **Pointing benchmark.** `eval/pointing/` ships 12 labelled cases from live websites (Wikipedia, GitHub, Hacker News, npm, Python docs), made by `npx electron eval/pointing/collect.mjs`. Add screenshots of the apps you care about (Blender, DaVinci Resolve) by hand as described in `eval/pointing/README.md`, then run it with your API keys in the environment.
 
+### Debugging
+
+`npm run dev` turns on a detailed debug log. Each line has the time and what it's about:
+
+| Tag | What it shows |
+|---|---|
+| `[keys]` `[mic]` `[stt]` | talk keys, which microphone is recording, the Deepgram connection (close codes, audio sent) and every phrase it heard |
+| `[turn]` `[model]` `[tool]` | each question, the model called and its token use, time to the first words, every tool call with its input, result and timing |
+| `[tts]` `[draw]` `[latency]` | each spoken sentence and how long the voice took, every point or drawing, key-up to first spoken word |
+| `[visual]` `[board]` | visuals requested and received, clicks on them, and console messages and errors from inside the visual itself |
+| `[control]` `[task]` | computer-control steps, permission answers and why it stopped; background task progress |
+| `[panel]` `[overlay]` `[audio]` | console messages, errors and crashes from STEVE's own windows |
+| `ERROR` | any error, with its stack trace |
+
+The same log is saved in STEVE's data folder, in `logs/steve.log` (the first line in the terminal shows the full path; on a Mac it's under `~/Library/Application Support/STEVE/`, on Windows under `%APPDATA%\STEVE\`). Next to it, `last-visual.html` is the last visual exactly as the model wrote it; open it in a browser to see what went wrong.
+
+The installed app writes the log only when started with `STEVE_DEBUG=1`: on a Mac, `STEVE_DEBUG=1 /Applications/STEVE.app/Contents/MacOS/STEVE`; on Windows (PowerShell), `$env:STEVE_DEBUG=1; & "$env:LOCALAPPDATA\Programs\STEVE\STEVE.exe"`.
+
+The log never contains API keys, screenshots or audio. It does contain your questions and STEVE's answers, and the start of anything STEVE read from the clipboard, so delete the `logs` folder when you're done debugging if that matters to you.
+
 ### Testing on a Mac without a paid Apple account
 
-- **From source (best for debugging):** `npm run dev`. Main-process logs, including `[latency]`, print in the terminal. macOS gives the permissions to your terminal app (Terminal, iTerm, VS Code), so grant it Microphone, Screen Recording and Accessibility once, then restart the terminal.
+- **From source (best for debugging):** `npm run dev`. The debug log (below) prints in the terminal. macOS gives the permissions to your terminal app (Terminal, iTerm, VS Code), so grant it Microphone, Screen Recording and Accessibility once, then restart the terminal.
 - **Inspect the windows:** `npm run dev -- --remoteDebuggingPort 9222`, open `chrome://inspect` in Chrome, add `localhost:9222` under Configure, and inspect the panel, overlay, board or audio page. `npm run dev -- --inspect` does the same for the main process (or attach VS Code to port 5858).
 - **As a real app:** `npm run build && npx electron-builder --mac dir` makes `dist/mac-arm64/STEVE.app`, ad-hoc signed, so it runs on the Mac that built it. Each rebuild looks like a new app to macOS, and old permission switches stop working even though they still show as on, so run `tccutil reset All app.steve.companion` before opening a new build.
 - **On another Mac:** macOS blocks an ad-hoc signed app downloaded from elsewhere; open it once via System Settings > Privacy & Security > Open Anyway.

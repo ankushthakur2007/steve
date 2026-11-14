@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { model } from './brain'
 import { capture, type Shot } from './capture'
 import { imageToScreen } from './coords'
+import { log } from './log'
 import { CONTROL_PROMPT } from './prompts'
 import { getSettings, saveSettings } from './settings'
 import { addTokens } from './usage'
@@ -47,6 +48,7 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
   }
   const { Button, Key: Keys, keyboard, mouse, Point } = nut
   if (active) return 'STEVE is already controlling the computer.'
+  log('control', `task: ${goal}`, { autopilot: getSettings().autopilot })
   if (!getSettings().autopilot) {
     // STEVE has no Dock icon, so without this macOS can open the dialog behind other apps.
     if (process.platform === 'darwin') app.focus({ steal: true })
@@ -58,6 +60,7 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
       message: 'Let STEVE use your mouse and keyboard?',
       detail: `Task: ${goal}\n\n"Always allow" turns on autopilot: STEVE won't ask again (turn it off in Settings > Mouse and keyboard). It still asks before anything consequential.\n\nPress Esc or move your mouse at any time to take back control.`,
     })
+    log('control', `permission: ${['always allow', 'allow once', 'cancel'][response]}`)
     if (response === 2) return 'The user declined to give control.'
     if (response === 0) saveSettings({ autopilot: true })
   }
@@ -73,7 +76,10 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
   // The user grabbing the mouse means "stop".
   const watcher = setInterval(() => {
     const p = screen.getCursorScreenPoint()
-    if (!acting && Math.hypot(p.x - expected.x, p.y - expected.y) > 8) abort.abort()
+    if (!acting && !abort.signal.aborted && Math.hypot(p.x - expected.x, p.y - expected.y) > 8) {
+      log('control', `the user moved the mouse to ${p.x},${p.y}: stopping`)
+      abort.abort()
+    }
   }, 150)
 
   const native = (x: number, y: number) => {
@@ -152,6 +158,7 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
         acting = true // the user will move the mouse to answer; that is not a takeover
         try {
           const r = await dialog.showMessageBox({ type: 'warning', buttons: ['Approve', 'Deny'], defaultId: 1, cancelId: 1, message: 'STEVE wants to:', detail: action })
+          log('control', `asked "${action}": ${r.response === 0 ? 'approved' : 'denied'}`)
           return r.response === 0 ? 'approved' : 'denied: do not do it'
         } finally {
           expected = screen.getCursorScreenPoint()
@@ -176,10 +183,16 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
       stopWhen: isStepCount(40),
       abortSignal: abort.signal,
       prepareStep: ({ messages }) => ({ messages: keepRecentScreenshots(messages, 2) }),
-      onStepFinish: (step) => addTokens(getSettings().models.agent, step.usage),
+      onStepFinish: (step) => {
+        addTokens(getSettings().models.agent, step.usage)
+        for (const c of step.toolCalls) log('control', `→ ${c.toolName}`, c.input)
+        if (step.text) log('control', step.text)
+      },
     })
+    log('control', 'finished', res.text)
     return res.text || 'Done.'
   } catch (e) {
+    log('control', abort.signal.aborted ? 'stopped by the user' : 'failed', abort.signal.aborted ? undefined : e)
     return abort.signal.aborted ? 'Stopped: the user took back control.' : `Computer control failed: ${errorText(e)}`
   } finally {
     clearInterval(watcher)

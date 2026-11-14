@@ -1,5 +1,6 @@
 import { desktopCapturer, screen, type Rectangle } from 'electron'
 import { fitSize } from './coords'
+import { log } from './log'
 
 export type Shot = { jpeg: Buffer; width: number; height: number; bounds: Rectangle; displayId: number }
 
@@ -8,6 +9,7 @@ export async function capture(displayId?: number, maxEdge = 1280): Promise<Shot>
   const display =
     screen.getAllDisplays().find((d) => d.id === displayId) ?? screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const { width, height } = display.size
+  const t0 = Date.now()
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
     thumbnailSize: fitSize(width * display.scaleFactor, height * display.scaleFactor, maxEdge),
@@ -18,5 +20,6 @@ export async function capture(displayId?: number, maxEdge = 1280): Promise<Shot>
     throw new Error('Screen capture failed. On macOS, allow STEVE under Privacy & Security > Screen Recording.')
   }
   const size = src.thumbnail.getSize()
+  log('capture', `screenshot ${size.width}x${size.height} of display ${display.id} (${width}x${height} at ${display.scaleFactor}x) in ${Date.now() - t0} ms`)
   return { jpeg: src.thumbnail.toJPEG(80), width: size.width, height: size.height, bounds: display.bounds, displayId: display.id }
 }

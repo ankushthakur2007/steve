@@ -12,7 +12,7 @@ const h = vi.hoisted(() => {
 })
 
 vi.mock('electron', () => ({
-  app: { getPath: () => h.dir },
+  app: { getPath: () => h.dir, isPackaged: true }, // packaged: no debug log during tests
   safeStorage: {
     isAsyncEncryptionAvailable: async () => true,
     encryptStringAsync: async (s: string) => Buffer.from(s),

@@ -1,3 +1,4 @@
+import { log } from './log'
 import { getKeys, getSettings } from './settings'
 import { createSentenceStream, speakable, type Sentence } from './tags'
 import { addSpeech } from './usage'
@@ -7,6 +8,7 @@ export async function synth(text: string, signal: AbortSignal): Promise<ArrayBuf
   const s = getSettings()
   const k = getKeys()
   if (s.voice === 'off') return null
+  const t0 = Date.now()
   let res: Response
   if (s.voice === 'elevenlabs') {
     if (!k.elevenlabs) throw new Error('Add an ElevenLabs key in settings, or switch the voice to Deepgram.')
@@ -30,7 +32,9 @@ export async function synth(text: string, signal: AbortSignal): Promise<ArrayBuf
   }
   if (!res.ok) throw new Error(`Voice service error ${res.status}: ${(await res.text()).slice(0, 200)}`)
   addSpeech(s.voice, text.length)
-  return res.arrayBuffer()
+  const audio = await res.arrayBuffer()
+  log('tts', `${s.voice} voiced ${text.length} chars in ${Date.now() - t0} ms (${Math.round(audio.byteLength / 1024)} KB)`, text)
+  return audio
 }
 
 /**

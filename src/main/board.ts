@@ -5,6 +5,7 @@ import { app, BrowserWindow, dialog, protocol, screen } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { extname, join, normalize, sep } from 'node:path'
 import STAGE_JS from '../visual/steve3d.js?raw'
+import { log } from './log'
 import { parseSdf } from './sdf'
 import { usesStage, wrapVisual } from './visual'
 import { loadPage, PRELOAD } from './windows'
@@ -89,16 +90,18 @@ async function present(i: number) {
   currentVisual = title
   board.setTitle(title)
   if (!board.isVisible()) place(board)
+  log('board', `showing "${title}" (${i + 1} of ${visuals.length})`, { kit: usesStage(html), bounds: board.getBounds() })
   board.webContents.send('visual', { title, doc: wrapVisual(html), clear: usesStage(html), index: i, titles: visuals.map((v) => v.title) })
   board.showInactive() // keep the keyboard in the app the user is working in
 }
 
-export const hideBoard = () => board?.hide()
+export const hideBoard = () => { log('board', 'closed'); board?.hide() }
 /** Toggles between the normal and the large size, around the same centre. */
 export function resizeBoard() {
   if (!board || board.isDestroyed()) return
   big = !big
   place(board, true)
+  log('board', big ? 'bigger' : 'smaller', board.getBounds())
 }
 
 export const goVisual = (i: number) => { if (Number.isInteger(i) && visuals[i]) void present(i) }

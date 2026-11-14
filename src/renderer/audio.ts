@@ -9,6 +9,7 @@ steve.on('mic-start', async (id: number) => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
     if (stopRequested === id) { stream.getTracks().forEach((t) => t.stop()); steve.send('mic-done', id); return }
     const rec = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
+    console.info(`recording ${id} from "${stream.getAudioTracks()[0]?.label || 'unknown microphone'}"`) // shows in the debug log
     let sent = Promise.resolve() // chunks go out strictly in order, and 'mic-done' after the last one
     rec.ondataavailable = (e) => {
       if (e.data.size) sent = sent.then(async () => steve.send('mic-chunk', id, await e.data.arrayBuffer()))
@@ -48,7 +49,8 @@ steve.on('play', async (data: ArrayBuffer | Uint8Array) => {
     s.onended = () => { if (source === s) { source = null; steve.send('played') } }
     source = s
     s.start()
-  } catch {
+  } catch (e) {
+    console.error('could not play speech:', e instanceof Error ? e.message : e)
     steve.send('played') // never leave the speech queue waiting
   }
 })

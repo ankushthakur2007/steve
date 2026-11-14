@@ -7,6 +7,7 @@ import { app } from 'electron'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { model, openai, providerOf } from './brain'
+import { log as debugLog } from './log'
 import { AGENT_PROMPT } from './prompts'
 import { getSettings, type McpServer } from './settings'
 import { addTokens } from './usage'
@@ -72,7 +73,8 @@ export function startTask(goal: string): TaskView {
 }
 
 async function run(t: Task) {
-  const log = (line: string) => { t.log.push(line.length > 300 ? line.slice(0, 300) + '…' : line); changed() }
+  const log = (line: string) => { t.log.push(line.length > 300 ? line.slice(0, 300) + '…' : line); debugLog('task', `${t.id} ${line}`); changed() }
+  debugLog('task', `${t.id} started: ${t.goal}`)
   const clients: MCPClient[] = []
   try {
     const tools: ToolSet = {
@@ -131,6 +133,7 @@ async function run(t: Task) {
   } finally {
     await Promise.all(clients.map((c) => c.close().catch(() => {})))
     changed()
+    debugLog('task', `${t.id} ${t.status}`, t.result)
     if (t.status !== 'stopped') events.finished(view(t))
   }
 }

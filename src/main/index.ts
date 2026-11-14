@@ -4,14 +4,16 @@ import {
   app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen,
   session, shell, systemPreferences, Tray,
 } from 'electron'
+import { release } from 'node:os'
 import { z } from 'zod'
 import { answerTask, initTasks, listTasks, startTask, stopTask } from './agents'
 import { currentVisual, goVisual, hideBoard, moleculeHtml, registerLibProtocol, resizeBoard, saveVisual, showVisual } from './board'
-import { extractHtml } from './visual'
+import { extractHtml, usesStage } from './visual'
 import { chat, missingKey, model, note, seedHistory } from './brain'
 import { capture, type Shot } from './capture'
 import { controlComputer, controlling, stopControl } from './control'
 import { startHotkeys, stopHotkeys } from './hotkey'
+import { debugOn, keep, log, logDir, logError, short, timed } from './log'
 import * as memory from './memory'
 import { createOverlays, draw, toOverlays } from './overlay'
 import { VISUAL_PROMPT } from './prompts'
@@ -29,7 +31,10 @@ let tray: Tray
 let quitting = false
 
 // ---------- UI helpers ----------
+let lastState = ''
 function setState(s: State) {
+  if (s !== lastState) log('state', s)
+  lastState = s
   toOverlays('state', s)
   panel?.webContents.send('state', s)
 }
@@ -39,7 +44,8 @@ const transcript = (role: 'user' | 'assistant' | 'system' | 'note', text: string
 
 function report(e: unknown) {
   const msg = errorText(e)
-  console.error('[steve]', msg)
+  if (debugOn) logError('error', e)
+  else console.error('[steve]', msg)
   caption(`⚠ ${msg}`)
   transcript('system', msg)
 }
@@ -80,9 +86,13 @@ function chatTools(signal: AbortSignal): ToolSet {
       }),
       execute: async ({ title, brief }, { abortSignal }) => {
         setState('working')
+        log('visual', `asking ${getSettings().models.visual} for "${title}"`, brief)
         const { text, totalUsage } = await generateText({ model: model('visual'), system: VISUAL_PROMPT, prompt: brief, abortSignal })
         addTokens(getSettings().models.visual, totalUsage)
-        await showVisual(title, extractHtml(text))
+        const html = extractHtml(text)
+        log('visual', `got ${html.length} chars of HTML${usesStage(html) ? ' (3D kit)' : ''}`, { in: totalUsage.inputTokens, out: totalUsage.outputTokens })
+        keep('last-visual.html', html) // open it in a browser, or read it, when a visual looks wrong
+        await showVisual(title, html)
         return `The visual "${title}" is showing on the user's screen.`
       },
     }),
@@ -163,6 +173,16 @@ function chatTools(signal: AbortSignal): ToolSet {
   }
 }
 
+/** Logs every tool call: what the model asked for, how long it took, and what came back. */
+function logged(tools: ToolSet): ToolSet {
+  for (const [name, t] of Object.entries(tools)) {
+    const run = t.execute as ((input: unknown, opts: unknown) => unknown) | undefined
+    if (run) (t as { execute: unknown }).execute = (input: unknown, opts: unknown) =>
+      timed('tool', `${name} ${short(input, 200)}`, async () => run(input, opts), (r) => short(r, 200))
+  }
+  return tools
+}
+
 /** One question and its answer. A spoken question (`voice`) is followed by a few seconds of hands-free listening. */
 async function runTurn(text: string, shot: Shot | null, { keyUpAt = Date.now(), voice = false } = {}) {
   interrupt()
@@ -172,6 +192,9 @@ async function runTurn(text: string, shot: Shot | null, { keyUpAt = Date.now(), 
   let completed = false
   const abort = new AbortController()
   turn = abort
+  const t0 = Date.now()
+  let said = ''
+  log('turn', `${voice ? 'spoken' : 'typed'} question: "${text}"`, { screen: shot ? `${shot.width}x${shot.height}` : 'none' })
   toOverlays('draw', [{ kind: 'clear' }])
   setState('thinking')
   transcript('user', text)
@@ -179,8 +202,10 @@ async function runTurn(text: string, shot: Shot | null, { keyUpAt = Date.now(), 
   let first = true
   const speaker = createSpeaker({
     onSentence: (s) => {
-      if (first) { first = false; console.log(`[latency] key-up to first sentence: ${Date.now() - keyUpAt} ms`) }
+      if (first) { first = false; log('latency', `key-up to first sentence: ${Date.now() - keyUpAt} ms`) }
+      if (s.tags.length) log('draw', shot ? 'on screen' : 'skipped: no screenshot with this question', s.tags)
       if (shot && s.tags.length) draw(s.tags, shot)
+      said += s.text + ' '
       setState(s.tags.some((t) => t.kind === 'point') ? 'pointing' : 'speaking')
       if (s.text) { caption(s.text); transcript('assistant', s.text + ' ', true) }
     },
@@ -188,9 +213,10 @@ async function runTurn(text: string, shot: Shot | null, { keyUpAt = Date.now(), 
     onError: report,
   }, abort.signal)
   try {
-    for await (const chunk of chat(text, shot, chatTools(abort.signal), abort.signal)) speaker.push(chunk)
+    for await (const chunk of chat(text, shot, logged(chatTools(abort.signal)), abort.signal)) speaker.push(chunk)
     await speaker.end()
     completed = !abort.signal.aborted
+    log('turn', completed ? `answered in ${Date.now() - t0} ms` : 'interrupted', said.trim())
   } catch (e) {
     if (!abort.signal.aborted) report(e)
   } finally {
@@ -221,6 +247,7 @@ function listen(handsFree: boolean) {
   }
   const limit = overLimit()
   if (limit) { if (!handsFree) report(limit); return }
+  log('mic', handsFree ? `listening hands-free for ${FOLLOW_UP_MS / 1000} s` : 'listening (talk keys held)')
   setState('listening')
   caption(null)
   const look = () => { toOverlays('flash'); return capture().catch((e) => { report(e); return null }) } // flash: "screen captured"
@@ -238,7 +265,7 @@ function listen(handsFree: boolean) {
     }, handsFree ? () => endListening(id) : undefined),
   }
   // Nothing said in time: stop listening quietly.
-  if (handsFree) l.timer = setTimeout(() => { if (listening === l && !l.shot) pttCancel() }, FOLLOW_UP_MS)
+  if (handsFree) l.timer = setTimeout(() => { if (listening === l && !l.shot) { log('mic', 'no reply heard: stopped listening'); pttCancel() } }, FOLLOW_UP_MS)
   listening = l
   audio.webContents.send('mic-start', id)
 }
@@ -248,23 +275,26 @@ function endListening(id?: number) {
   const l = listening
   if (!l || (id !== undefined && l.id !== id)) return
   clearTimeout(l.timer)
+  log('mic', `recording stopped after ${Date.now() - l.started} ms`)
   setState('thinking')
   l.at = Date.now() // the start of the latency budget
   audio.webContents.send('mic-stop', l.id)
 }
 
 function pttDown() {
+  log('keys', 'talk keys down')
   interrupt()
   stopControl()
   pttCancel() // a new question replaces one still being recorded or transcribed
   listen(false)
 }
 
-const pttUp = () => endListening()
+const pttUp = () => { log('keys', 'talk keys up'); endListening() }
 
 function pttCancel() {
   const l = listening
   if (!l) return
+  log('mic', 'listening cancelled')
   clearTimeout(l.timer)
   audio.webContents.send('mic-stop', l.id)
   l.stt.cancel()
@@ -281,6 +311,7 @@ async function micDone(id: number) {
   addListening((Date.now() - l.started) / 1000)
   try {
     const text = await l.stt.finish()
+    log('mic', text ? `transcript: "${text}"` : 'nothing was heard')
     if (listening) return // the user already started a new question
     if (!text) { if (!l.handsFree) caption("I didn't catch that."); setState('idle'); return }
     await runTurn(text, await l.shot, { keyUpAt: l.at, voice: true })
@@ -354,8 +385,16 @@ function permissionStatus() {
 
 function registerIpc() {
   ipcMain.handle('settings:get', () => settingsView())
-  ipcMain.handle('settings:save', (_e, patch) => { saveSettings(patch); return settingsView() })
-  ipcMain.handle('keys:save', async (_e, patch: Partial<Record<KeyName, string>>) => { await setKeys(patch); return settingsView() })
+  ipcMain.handle('settings:save', (_e, patch) => {
+    log('settings', 'saved', patch.mcpServers ? { ...patch, mcpServers: Object.keys(patch.mcpServers) } : patch) // tool servers' env can hold tokens
+    saveSettings(patch)
+    return settingsView()
+  })
+  ipcMain.handle('keys:save', async (_e, patch: Partial<Record<KeyName, string>>) => {
+    log('settings', 'API keys saved', Object.keys(patch)) // names only, never the keys
+    await setKeys(patch)
+    return settingsView()
+  })
   ipcMain.handle('perm:status', () => permissionStatus())
   ipcMain.handle('perm:request', async (_e, kind: string) => {
     if (kind === 'microphone') await systemPreferences.askForMediaAccess('microphone')
@@ -390,6 +429,7 @@ function registerIpc() {
   ipcMain.on('mic-error', (_e, msg: string) => { report(`Microphone: ${msg}`); pttCancel() })
   ipcMain.on('played', () => { played?.(); played = null })
   ipcMain.on('visual-select', (_e, sel: { label: string; detail: string }) => {
+    log('visual', `clicked "${sel.label}"`, sel.detail)
     const label = String(sel.label).slice(0, 200)
     const detail = String(sel.detail ?? '').slice(0, 500)
     void runTurn(`(I clicked "${label}" in the visual "${currentVisual}"${detail ? `: ${detail}` : ''}.) Explain what it is and how it fits in, briefly.`, null)
@@ -400,7 +440,20 @@ function registerIpc() {
 app.on('web-contents-created', (_e, wc) => {
   wc.setWindowOpenHandler(() => ({ action: 'deny' }))
   wc.on('will-navigate', (e) => e.preventDefault())
+  if (!debugOn) return
+  // Every window's console, page errors and crashes go to the log; messages from inside a visual are marked "visual".
+  const page = () => wc.getURL().match(/(\w+)\.html/)?.[1] ?? 'window'
+  wc.on('console-message', (e) => {
+    let where = page()
+    try { if (e.frame && e.frame !== wc.mainFrame) where = 'visual' } catch { /* frame already gone */ }
+    log(where, `console ${e.level}: ${short(e.message, 400)}`, e.level === 'error' || e.level === 'warning' ? `at ${e.sourceId || 'page'}:${e.lineNumber}` : undefined)
+  })
+  wc.on('did-fail-load', (_e, code, desc, url) => { if (code !== -3) log(page(), `failed to load ${url}: ${desc} (${code})`) }) // -3: replaced by a newer page
+  wc.on('preload-error', (_e, path, err) => logError(page(), err))
+  wc.on('render-process-gone', (_e, d) => log(page(), `renderer crashed: ${d.reason} (exit code ${d.exitCode})`))
+  wc.on('unresponsive', () => log(page(), 'window stopped responding'))
 })
+if (debugOn) process.on('unhandledRejection', (e) => logError('unhandled', e))
 
 // A separate profile folder (settings, keys, memory), e.g. for the end-to-end test.
 if (process.env.STEVE_PROFILE) app.setPath('userData', process.env.STEVE_PROFILE)
@@ -408,6 +461,16 @@ if (!app.requestSingleInstanceLock()) app.quit()
 
 app.whenReady().then(async () => {
   await loadKeys()
+  {
+    const s = getSettings(), k = getKeys()
+    log('app', `STEVE ${app.getVersion()} starting (debug log: ${logDir()}/steve.log)`, {
+      os: `${process.platform} ${release()} ${process.arch}`, electron: process.versions.electron, profile: app.getPath('userData'),
+    })
+    log('app', 'settings', {
+      ...s, mcpServers: Object.keys(s.mcpServers), // server names only: their env can hold tokens
+      keys: Object.entries(k).filter(([, v]) => v).map(([n]) => n),
+    })
+  }
   if (process.platform === 'darwin') app.dock?.hide()
   // Only the hidden audio window may use the microphone; nothing gets other permissions.
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb) => cb(permission === 'media' && wc === audio?.webContents))

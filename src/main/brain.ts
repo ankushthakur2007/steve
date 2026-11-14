@@ -4,6 +4,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createProviderRegistry, isStepCount, streamText, type ModelMessage, type ToolSet } from 'ai'
 import type { Shot } from './capture'
 import * as memory from './memory'
+import { log, logError } from './log'
 import { CHAT_PROMPT } from './prompts'
 import { getKeys, getSettings, type KeyName } from './settings'
 import { addTokens } from './usage'
@@ -79,19 +80,28 @@ export async function* chat(text: string, shot: Shot | null, tools: ToolSet, sig
     abortSignal: signal,
   })
   let reply = ''
+  const t0 = Date.now()
+  log('model', `chat → ${s.models.chat}`, { messages: history.length, screenshot: shot ? `${shot.width}x${shot.height}` : 'none', memory: remembered.length })
   try {
     for await (const part of result.fullStream) {
-      if (part.type === 'text-delta') { reply += part.text; yield part.text }
+      if (part.type === 'text-delta') {
+        if (!reply) log('model', `first words after ${Date.now() - t0} ms`)
+        reply += part.text
+        yield part.text
+      }
       else if (part.type === 'finish-step') yield '\n' // keeps sentences from separate steps apart
       else if (part.type === 'error') throw part.error
     }
-    if (signal.aborted) history.push({ role: 'assistant', content: reply + ' [interrupted]' })
+    if (signal.aborted) { history.push({ role: 'assistant', content: reply + ' [interrupted]' }); log('model', `chat interrupted after ${Date.now() - t0} ms`) }
     else {
       history.push(...(await result.response).messages)
-      addTokens(s.models.chat, await result.totalUsage) // shortcut: interrupted replies aren't metered (the SDK reports no usage)
+      const usage = await result.totalUsage
+      addTokens(s.models.chat, usage) // shortcut: interrupted replies aren't metered (the SDK reports no usage)
+      log('model', `chat reply finished in ${Date.now() - t0} ms (${await result.finishReason})`, { chars: reply.length, in: usage.inputTokens, out: usage.outputTokens })
     }
   } catch (e) {
     history.push({ role: 'assistant', content: reply + ' [interrupted]' })
+    if (!signal.aborted) logError('model', e)
     throw e
   } finally {
     trim()

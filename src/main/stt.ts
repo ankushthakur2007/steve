@@ -1,3 +1,4 @@
+import { log } from './log'
 import { sleep } from './windows'
 
 export type Stt = { send(chunk: ArrayBuffer): void; finish(): Promise<string>; cancel(): void }
@@ -17,20 +18,25 @@ export function openStt(key: string, onText: (soFar: string) => void, onSpeechEn
   let interim = ''
   let failed = false
   const closed = new Promise<void>((r) => ws.addEventListener('close', () => r()))
+  const t0 = Date.now()
+  let chunks = 0, bytes = 0
+  log('stt', `connecting to Deepgram${onSpeechEnd ? ' (hands-free)' : ''}`)
 
-  ws.addEventListener('error', () => { failed = true })
-  ws.addEventListener('open', () => { pending.forEach((m) => ws.send(m)); pending.length = 0 })
+  ws.addEventListener('error', () => { failed = true; log('stt', 'connection error (check the Deepgram key and the network)') })
+  ws.addEventListener('close', (e) => log('stt', `closed after ${Date.now() - t0} ms (code ${e.code}${e.reason ? `: ${e.reason}` : ''}), ${chunks} audio chunks, ${Math.round(bytes / 1024)} KB sent`))
+  ws.addEventListener('open', () => { log('stt', `connected in ${Date.now() - t0} ms`); pending.forEach((m) => ws.send(m)); pending.length = 0 })
   ws.addEventListener('message', (e) => {
     let m: any
     try { m = JSON.parse(String(e.data)) } catch { return }
-    if (m.type !== 'Results') return
+    if (m.type !== 'Results') { log('stt', `message: ${m.type}`, m.type === 'Metadata' ? undefined : m); return }
     const t: string = m.channel?.alternatives?.[0]?.transcript ?? ''
-    if (m.is_final) { if (t) finals.push(t); interim = '' } else interim = t
+    if (m.is_final) { if (t) { finals.push(t); log('stt', `heard: "${t}"`) } interim = '' } else interim = t
     onText([...finals, interim].join(' ').trim())
-    if (m.speech_final && finals.length) onSpeechEnd?.()
+    if (m.speech_final && finals.length) { log('stt', 'pause detected: end of speech'); onSpeechEnd?.() }
   })
 
   const send = (m: string | ArrayBuffer) => {
+    if (typeof m !== 'string') { chunks++; bytes += m.byteLength }
     if (ws.readyState === WebSocket.OPEN) ws.send(m)
     else if (ws.readyState === WebSocket.CONNECTING) pending.push(m)
   }
