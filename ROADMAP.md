@@ -9,24 +9,37 @@ What it would take to make STEVE the best desktop companion there is, using the 
 - **Cost meter and daily limit.** Spend per service today and this month, and a hard daily cap.
 - **Visual gallery.** Back/forward through this session's visuals; Save writes a web page that opens in any browser.
 - **Copied-text helper.** "Explain what I copied", "translate this and copy it", including copied images.
-- **Floating 3D with a kit of its own** (see the next section).
+- **Floating 3D on a scene engine of its own** (see the next section).
 
 ## 3D at HeyClicky's level
 
-HeyClicky's launch video shows its 3D models drawn right on the screen next to what they explain, with soft studio lighting, coloured tags on leader lines, thick flow arrows, cutaways and camera moves that follow the explanation. A custom engine isn't needed for that look; it comes from consistent lighting, labelling and staging around a WebGL renderer.
+HeyClicky's launch video shows its 3D models drawn right on the screen next to what they explain, with soft studio lighting, tags on leader lines, thick flow arrows, cutaways and camera moves that follow the explanation.
+
+### Decision: a scene engine, not a new graphics engine
+
+The question was whether STEVE needs its own rendering engine to get more detail and speed. It doesn't, because rendering was never the slow part:
+
+- Three.js on WebGL draws scenes like these at 60 frames a second; the first frame of a STEVE model takes well under a second on a real graphics chip (about one second even in software rendering).
+- What was slow was the AI writing a whole page of JavaScript (and thinking at its default effort) before anything could show, while STEVE stayed silent waiting for it.
+- A native engine (Metal, Vulkan, Rust) would cost months, need separate Windows and macOS builds, and lose what makes generation work at all: models write Three.js fluently, and they've never seen a custom API.
+
+What HeyClicky calls its engine is, from the outside, the same idea as what STEVE now has: a compact scene format the model fills in quickly, a library of detailed parts, and a renderer that gives every scene the same finish.
 
 Done:
-- Visuals float over the user's work; 3D models have no background.
-- `src/visual/steve3d.js`, a 3D kit that gives every scene the same finish: studio lighting, materials, shadows, an assembling intro, tags kept apart on screen, flow arrows, cutaways, camera moves, exploded views and guided tours. The model writes only the object.
-- The molecule viewer uses the same kit.
+- **Streaming scenes.** The model writes one JSON line per part; each one is drawn the moment it arrives, so the model builds up on screen within a second or two of the first line instead of appearing after the whole page. For the jet engine example the scene is 1,730 characters against 2,372 for the code version, with more detail in it.
+- **Parts library.** Gear, fan, bladed discs, spring, bolt, wheel, circuit board, chip, pin header, ports, screen, DNA helix, planet, plus primitives, lathes, tubes and extrusions, repeated in rows or rings. One line gives a detailed object, which is also why the output is short.
+- **STEVE keeps talking.** Visual tools return at once; the 3D scene streams and the 2D page is written in the background. Visuals use low reasoning effort.
+- **Apple-style finish.** Hairline edges where faces meet, rim light, at least 1.5x rendering for crisp edges on any screen, frosted tags with a colour dot, Apple's system colours, frosted step bar and toolbar; 2D visuals follow Apple's type, colour and spacing rules.
+- Floating on the screen with no background, guided tours, cutaways, exploded views, clicks that ask STEVE; the molecule viewer uses the same engine.
 
 Next, in order:
 1. **Tours that follow STEVE's voice.** The chat model already speaks with timed [POINT] tags; a [STEP:n] tag would move the camera, cut and label in sync with the sentence being spoken, as in the HeyClicky demo. Reuses `tags.ts` and `tts.ts`; free to run.
-2. **Pick the visual model by looking.** The look is now fixed by the kit; how detailed the object is depends on the model that writes it. Generate the same 10 subjects (jet engine, heart, Raspberry Pi, DNA, cell, house, car, camera, bridge, solar system) with Luna and one or two bigger models, render them with the screenshot harness, and compare. A bigger model for the `visual` role only costs more on the questions that make a visual.
-3. **Open beside what it explains.** The chat model sees the screenshot; let show_visual take a screen point so the window opens next to the thing being discussed (today it opens on the side away from the cursor).
-4. **Ambient occlusion and softer shadows** (Three.js GTAO pass) when the graphics card is fast enough, switched off on software rendering.
-5. **Clicks through empty space.** The floating window takes clicks even where it's transparent. Forward mouse events through transparent pixels (`setIgnoreMouseEvents` with `forward`), tested carefully on both systems.
-6. **2D cards in the same style.** Light paper cards with marker-style diagrams for 2D explanations, matching the overlay's ink.
+2. **Pick the visual model by looking.** Generate the same 10 subjects (jet engine, heart, Raspberry Pi, DNA, cell, house, car, camera, bridge, solar system) with Luna and one or two bigger or faster models, render them with the screenshot harness, and compare detail and time to first part.
+3. **More parts where they pay off**: organic shapes for biology (heart, cell, neuron), buildings (walls with window grids, roofs), vehicles (car body from a side profile), each as one parametric shape.
+4. **Open beside what it explains.** Let the 3D tool take a screen point so the window opens next to the thing being discussed.
+5. **A warm player.** Keep an idle 3D player loaded in the board so the first part appears without waiting for the graphics to start (a fraction of a second on a real GPU, about two seconds in software rendering).
+6. **Ambient occlusion** (Three.js GTAO) when the graphics chip is fast enough, off in software rendering.
+7. **Clicks through empty space**: forward mouse events through transparent pixels of the floating window, tested carefully on both systems.
 
 ## Next: make pointing great on pro apps
 

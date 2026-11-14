@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { extractHtml, usesStage, wrapVisual } from '../src/main/visual'
+import { extractHtml, sceneHtml, takeObjects, usesStage, wrapVisual } from '../src/main/visual'
 
 it('puts the no-network policy before any model-written script', () => {
   for (const html of [
@@ -42,4 +42,30 @@ it('3D kit visuals load the kit and float without a background; saved copies car
 it('extracts HTML from a fenced reply', () => {
   expect(extractHtml('Here you go:\n```html\n<p>x</p>\n```\nEnjoy')).toBe('<p>x</p>')
   expect(extractHtml('<p>plain</p>')).toBe('<p>plain</p>')
+})
+
+it('pulls whole scene lines out of streamed text, however the model wraps them', () => {
+  // Arrives in arbitrary pieces, with prose, a code fence, an enclosing array, commas and braces inside strings.
+  const reply = 'Here is the model:\n```json\n[{"part":"Fan","shape":"fan","info":"a {curly} \\"fan\\""},\n{"part":"Hub","ring":{"count":4}}, {"step":"done"}]\n```'
+  let buf = '', got: string[] = []
+  for (let i = 0; i < reply.length; i += 7) {
+    const { objects, rest } = takeObjects(buf + reply.slice(i, i + 7))
+    got = got.concat(objects)
+    buf = rest
+  }
+  expect(buf).toBe('')
+  expect(got.map((o) => JSON.parse(o))).toEqual([
+    { part: 'Fan', shape: 'fan', info: 'a {curly} "fan"' },
+    { part: 'Hub', ring: { count: 4 } },
+    { step: 'done' },
+  ])
+  expect(takeObjects('{"part":"Half","r":')).toEqual({ objects: [], rest: '{"part":"Half","r":' })
+})
+
+it('a 3D scene page replays its lines with the kit and cannot be broken out of', () => {
+  const page = sceneHtml(['{"part":"A","info":"</script><script>alert(1)</script>"}'], 'abc')
+  expect(usesStage(page)).toBe(true)
+  expect(page).not.toContain('</script><script>')
+  expect(page).toContain("player([")
+  expect(page).toContain('"abc")')
 })

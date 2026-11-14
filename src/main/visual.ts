@@ -18,6 +18,32 @@ const importMap = (three: string, steve3d?: string) => JSON.stringify({
 /** True when the visual is built with STEVE's 3D kit, which floats on the screen without a background. */
 export const usesStage = (html: string) => /from\s*['"]steve3d['"]/.test(html)
 
+const json = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c')
+
+/** A 3D scene as a page: the kit's player draws `lines`, then (with an `id`) the lines STEVE streams in. */
+export const sceneHtml = (lines: string[], id = '') =>
+  `<script type="module">\nimport { player } from 'steve3d'\nplayer(${json(lines)}, ${json(id)})\n</script>`
+
+/**
+ * Pulls every complete top-level {...} object out of streamed text, whatever is around it (newlines,
+ * commas, an enclosing [ ], code fences, prose). The unfinished object at the end comes back as `rest`.
+ */
+export function takeObjects(buf: string): { objects: string[]; rest: string } {
+  const objects: string[] = []
+  let depth = 0, start = -1, inString = false, escaped = false
+  for (let i = 0; i < buf.length; i++) {
+    const c = buf[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (c === '\\') escaped = true
+      else if (c === '"') inString = false
+    } else if (c === '"') inString = depth > 0 // quotes in prose outside an object don't matter
+    else if (c === '{') { if (depth++ === 0) start = i }
+    else if (c === '}' && depth > 0 && --depth === 0) objects.push(buf.slice(start, i + 1))
+  }
+  return { objects, rest: depth > 0 ? buf.slice(start) : '' }
+}
+
 // window.steve inside the visual: select() reports clicks to STEVE; steps() adds a playback bar.
 const RUNTIME = `window.steve = {
   select(label, detail) { parent.postMessage({ type: 'steve-select', label: String(label), detail: detail == null ? '' : String(detail) }, '*') },
@@ -44,9 +70,10 @@ const RUNTIME = `window.steve = {
   },
 }`
 
-// The playback bar wears STEVE's colours: ink pill, yellow play button.
-const BASE_CSS = `html,body{margin:0;min-height:100%;background:#0f1115;color:#e6e8ee;font:15px/1.4 system-ui,sans-serif}
-#steve-steps{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:4px;align-items:center;max-width:calc(100% - 24px);background:#221f2ef2;color:#f2f1f6;padding:6px 14px 6px 6px;border-radius:999px;box-shadow:0 8px 28px #0008;z-index:9999;font:13px system-ui,sans-serif}
+// Apple-style base: system font, dark card, and a frosted playback bar with STEVE's yellow play button.
+const FONT = `-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI Variable','Segoe UI',system-ui,sans-serif`
+const BASE_CSS = `html,body{margin:0;min-height:100%;background:#1c1c1e;color:#f5f5f7;font:15px/1.45 ${FONT};-webkit-font-smoothing:antialiased}
+#steve-steps{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:4px;align-items:center;max-width:calc(100% - 24px);background:rgba(44,44,46,.78);-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);border:.5px solid rgba(255,255,255,.14);color:#f5f5f7;padding:6px 14px 6px 6px;border-radius:999px;box-shadow:0 1px 1px rgba(0,0,0,.2),0 10px 30px rgba(0,0,0,.35);z-index:9999;font:13px/1.3 ${FONT}}
 #steve-steps button{display:grid;place-items:center;width:32px;height:32px;background:none;color:inherit;border:0;border-radius:50%;cursor:pointer}
 #steve-steps button:hover{background:#ffffff1a}
 #steve-steps .play{background:#ffd23f;color:#221f2e}

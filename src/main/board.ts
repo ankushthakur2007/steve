@@ -7,7 +7,7 @@ import { extname, join, normalize, sep } from 'node:path'
 import STAGE_JS from '../visual/steve3d.js?raw'
 import { log } from './log'
 import { parseSdf } from './sdf'
-import { usesStage, wrapVisual } from './visual'
+import { sceneHtml, usesStage, wrapVisual } from './visual'
 import { loadPage, PRELOAD } from './windows'
 
 protocol.registerSchemesAsPrivileged([
@@ -93,9 +93,39 @@ async function openBoard(): Promise<BrowserWindow> {
   return board
 }
 
+// ---------- 3D scenes stream in: the board loads the kit's player, then each line is drawn on arrival ----------
+let sceneId = ''
+
+/** Opens the board on an empty 3D player that draws the scene's lines as they are sent. */
+export async function startScene(title: string, id: string) {
+  const b = await openBoard()
+  sceneId = id
+  currentVisual = title
+  b.setTitle(title)
+  log('board', `drawing "${title}" as it streams`, { bounds: b.getBounds() })
+  b.webContents.send('scene-start', { title, id, doc: wrapVisual(sceneHtml([], id)) })
+  b.showInactive()
+}
+
+export function sceneLine(id: string, line: string) {
+  if (board && !board.isDestroyed()) board.webContents.send('scene-line', { id, line })
+}
+
+/** The scene is complete: keep it for back/forward and Save, and let the player add its tour. */
+export function endScene(id: string, title: string, lines: string[]) {
+  visuals.push({ title, html: sceneHtml(lines) })
+  if (visuals.length > 50) visuals.shift()
+  if (!board || board.isDestroyed()) return
+  board.webContents.send('scene-end', { id })
+  if (sceneId !== id) return // another visual is on the board by now
+  shown = visuals.length - 1
+  board.webContents.send('visual-meta', { index: shown, titles: visuals.map((v) => v.title) })
+}
+
 /** Shows the board straight away with "Making ..." while the model writes the visual, which can take a while. */
 export async function showMaking(title: string) {
   const b = await openBoard()
+  sceneId = ''
   log('board', `making "${title}"…`, { bounds: b.getBounds() })
   b.webContents.send('making', title)
   b.showInactive()
@@ -112,6 +142,7 @@ export function visualFailed(message: string | null) {
 
 async function present(i: number) {
   const b = await openBoard()
+  sceneId = ''
   const { title, html } = visuals[i]
   shown = i
   currentVisual = title

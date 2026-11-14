@@ -1,5 +1,5 @@
 // STEVE main process: wires push-to-talk -> screenshot + speech-to-text -> model -> speech + pointing.
-import { generateText, tool, type ToolSet } from 'ai'
+import { tool, type ToolSet } from 'ai'
 import {
   app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen,
   session, shell, systemPreferences, Tray,
@@ -7,20 +7,19 @@ import {
 import { release } from 'node:os'
 import { z } from 'zod'
 import { answerTask, initTasks, listTasks, startTask, stopTask } from './agents'
-import { currentVisual, goVisual, hideBoard, moleculeHtml, registerLibProtocol, resizeBoard, saveVisual, showMaking, showVisual, visualFailed } from './board'
-import { extractHtml, usesStage } from './visual'
-import { chat, missingKey, model, note, seedHistory } from './brain'
+import { currentVisual, goVisual, hideBoard, registerLibProtocol, resizeBoard, saveVisual } from './board'
+import { cancelVisual, make2d, make3d, makeMolecule } from './scene'
+import { chat, missingKey, note, seedHistory } from './brain'
 import { capture, type Shot } from './capture'
 import { controlComputer, controlling, stopControl } from './control'
 import { startHotkeys, stopHotkeys } from './hotkey'
-import { debugOn, keep, log, logDir, logError, short, timed } from './log'
+import { debugOn, log, logDir, logError, short, timed } from './log'
 import * as memory from './memory'
 import { createOverlays, draw, toOverlays } from './overlay'
-import { VISUAL_PROMPT } from './prompts'
 import { getKeys, getSettings, loadKeys, saveSettings, setKeys, type KeyName } from './settings'
 import { openStt, type Stt } from './stt'
 import { createSpeaker } from './tts'
-import { addListening, addTokens, onUsageChange, overLimit, usageSummary } from './usage'
+import { addListening, onUsageChange, overLimit, usageSummary } from './usage'
 import { errorText, loadPage, PRELOAD } from './windows'
 
 type State = 'idle' | 'listening' | 'thinking' | 'speaking' | 'working' | 'pointing'
@@ -78,38 +77,35 @@ function interrupt() {
 
 function chatTools(signal: AbortSignal): ToolSet {
   return {
+    // Visuals are made in the background (scene.ts): the tool returns at once so STEVE keeps talking.
+    show_3d: tool({
+      description: 'Show a detailed, interactive 3D model of a real, physical thing (machine, device, vehicle, building, organ, cell, planet) floating on the user\'s screen. It builds up part by part while you talk.',
+      inputSchema: z.object({
+        title: z.string(),
+        brief: z.string().describe('The object and its real shape and proportions, the 4 to 8 parts that matter and what each does, what moves or flows, and the tour steps.'),
+      }),
+      execute: async ({ title, brief }) => {
+        void make3d(title, brief)
+        return `A 3D model of "${title}" is being built on the user's screen, part by part. Explain it out loud now; don't wait for it.`
+      },
+    }),
     show_visual: tool({
-      description: 'Show an interactive visual (diagram, chart, graph, timeline, step-by-step animation, 3D model) floating on the user\'s screen.',
+      description: 'Show an interactive 2D visual (diagram, chart, graph, timeline, maths, step-by-step animation) floating on the user\'s screen. It appears a few seconds after the call.',
       inputSchema: z.object({
         title: z.string(),
         brief: z.string().describe('Everything the visual should show and let the user do, including all data, labels, steps and which parts are clickable.'),
       }),
-      execute: async ({ title, brief }, { abortSignal }) => {
-        setState('working')
-        await showMaking(title)
-        log('visual', `asking ${getSettings().models.visual} for "${title}"`, brief)
-        try {
-          const { text, totalUsage } = await generateText({ model: model('visual'), system: VISUAL_PROMPT, prompt: brief, abortSignal })
-          addTokens(getSettings().models.visual, totalUsage)
-          const html = extractHtml(text)
-          log('visual', `got ${html.length} chars of HTML${usesStage(html) ? ' (3D kit)' : ''}`, { in: totalUsage.inputTokens, out: totalUsage.outputTokens })
-          keep('last-visual.html', html) // open it in a browser, or read it, when a visual looks wrong
-          if (!/<(script|svg|canvas|body|div|html)\b/i.test(html)) throw new Error('the model replied without a visual')
-          await showVisual(title, html)
-        } catch (e) {
-          visualFailed(abortSignal?.aborted ? null : `Couldn't make "${title}": ${errorText(e)}`)
-          throw e
-        }
-        return `The visual "${title}" is showing on the user's screen.`
+      execute: async ({ title, brief }) => {
+        void make2d(title, brief)
+        return `"${title}" is being drawn on the user's screen and appears in a few seconds. Explain it out loud now; don't wait for it.`
       },
     }),
     show_molecule: tool({
       description: 'Show an interactive 3D model of a real molecule (from PubChem) floating on the user\'s screen.',
       inputSchema: z.object({ name: z.string().describe('Common or IUPAC name, e.g. "caffeine"') }),
       execute: async ({ name }) => {
-        await showMaking(name)
-        try { await showVisual(name, await moleculeHtml(name)) } catch (e) { visualFailed(`Couldn't show ${name}: ${errorText(e)}`); throw e }
-        return `A 3D model of ${name} is showing on the user's screen. The user can click atoms.`
+        void makeMolecule(name)
+        return `A 3D model of ${name} is appearing on the user's screen. The user can click atoms.`
       },
     }),
     remember: tool({
@@ -418,7 +414,7 @@ function registerIpc() {
   ipcMain.handle('usage:get', () => usageSummary())
   ipcMain.on('board:go', (_e, i: number) => goVisual(i))
   ipcMain.handle('board:save', () => saveVisual())
-  ipcMain.on('board:close', () => hideBoard())
+  ipcMain.on('board:close', () => { cancelVisual(); hideBoard() })
   ipcMain.on('board:size', () => resizeBoard())
   ipcMain.on('open-link', (_e, url: string) => { if (/^https:\/\//.test(String(url))) void shell.openExternal(url) })
   ipcMain.handle('tasks:list', () => listTasks())

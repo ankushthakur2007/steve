@@ -63,10 +63,25 @@ const s = stage(), { THREE } = s
 s.part('Bad', new THREE.Mesh(new THREE.BoxGeometry(NaN, 1, 1), s.mat('steel')))
 </script>`
 
+// A 3D scene in STEVE's scene format, streamed by the mock in small pieces (so lines arrive split),
+// with prose, a broken line and library shapes (gear, fan, bolt ring) mixed in.
+const SCENE = `Here is the pump:
+{"view":[1,0.6,1.2]}
+{"part":"Housing","shape":"cylinder","r":1,"h":0.6,"axis":"z","mat":"aluminium","label":true,"info":"the pump body"}
+{"part":"Impeller","shape":"fan","axis":"z","at":[0,0,0.35],"r":0.8,"blades":7,"mat":"steel","spin":4,"label":true,"info":"spins the water"}
+{"part":"Motor","shape":"box","size":[1.2,1.2,1.2],"at":[0,0,-1],"mat":"blue","label":true,"info":"drives the impeller"}
+{"to":"Motor","shape":"bolt","r":0.06,"axis":"z","at":[0,0,-0.35],"ring":{"count":4,"radius":0.7,"axis":"z"}}
+{"part": broken line}
+{"part":"Gear","shape":"gear","axis":"z","at":[1.6,0,0],"r":0.5,"teeth":18,"mat":"brass","info":"sets the speed"}
+{"arrow":[[0,1.6,0.4],[0,0.9,0.4]],"color":"blue","label":"Water in"}
+{"step":"A centrifugal pump.","labels":["Housing","Impeller","Motor"]}
+{"step":"The impeller flings water outward.","focus":"Impeller","highlight":["Impeller"]}`
+
 async function route(s: Seen): Promise<Reply> {
-  if (s.system.startsWith('You create one interactive visual') && s.lastUser.includes('BROKEN')) return { text: BROKEN_HTML }
-  if (s.system.startsWith('You create one interactive visual') && s.lastUser.includes('FAIL')) return { status: 400 }
-  if (s.system.startsWith('You create one interactive visual')) return { text: '```html\n' + (s.lastUser.includes('3D') ? KIT_HTML : VISUAL_HTML) + '\n```' }
+  if (s.system.startsWith('You build one detailed 3D model')) return { text: SCENE }
+  if (s.system.startsWith('You create one interactive 2D visual') && s.lastUser.includes('BROKEN')) return { text: BROKEN_HTML }
+  if (s.system.startsWith('You create one interactive 2D visual') && s.lastUser.includes('FAIL')) return { status: 400 }
+  if (s.system.startsWith('You create one interactive 2D visual')) return { text: '```html\n' + (s.lastUser.includes('3D') ? KIT_HTML : VISUAL_HTML) + '\n```' }
   if (s.system.startsWith('You are a background agent')) return { text: 'Report: Filament, Bevy and three.js compared.' }
   if (isControl(s)) {
     const actions = s.messages.filter((m) => m.role === 'tool').length
@@ -83,6 +98,7 @@ async function route(s: Seen): Promise<Reply> {
   if (u.includes('long story')) return { text: 'One. Two. Three. Four. Five. Six. Seven. Eight.' }
   if (u.includes('I clicked')) return { text: 'That bar is the first value.' } // before 'chart': the click mentions "Test chart"
   if (u.includes('chart')) return { tool: { name: 'show_visual', args: { title: 'Test chart', brief: 'A bar chart of A and B' } } }
+  if (u.includes('pump')) return { tool: { name: 'show_3d', args: { title: 'Pump', brief: 'A centrifugal pump' } } }
   if (u.includes('broken model')) return { tool: { name: 'show_visual', args: { title: 'Broken model', brief: 'BROKEN 3D' } } }
   if (u.includes('failing visual')) return { tool: { name: 'show_visual', args: { title: 'Failing visual', brief: 'FAIL' } } }
   if (u.includes('jet engine')) return { tool: { name: 'show_visual', args: { title: 'Jet engine', brief: 'A 3D jet engine' } } }
@@ -362,7 +378,34 @@ await check('visual failures show a message instead of an empty window, and reac
     return !st.hidden && st.classList.contains('error') && st.textContent!.includes('Couldn\'t make "Failing visual"')
   }))
   const debugLog = readFileSync(join(profile, 'logs', 'steve.log'), 'utf8')
-  for (const line of ['[board] making "Broken model"', '[visual] console error: [3D] Some shapes', '[tool] show_visual {"title":"Failing visual","brief":"FAIL"} failed']) {
+  for (const line of ['[board] making "Broken model"', '[visual] console error: [3D] Some shapes', '[visual] ERROR', '[board] Couldn\'t make "Failing visual"']) {
+    if (!debugLog.includes(line)) throw new Error(`the debug log is missing: ${line}`)
+  }
+  await board.evaluate(() => document.getElementById('close')!.click())
+})
+
+await check('3D scenes stream in: STEVE answers at once, parts are drawn from the stream with library shapes and edges, then kept for back/forward', async () => {
+  await until('idle', idle)
+  const from = await ask('show me a pump in 3D')
+  // The tool returns straight away, so STEVE's answer doesn't wait for the model to be built.
+  await until('STEVE answered', () => seen.slice(from).some((s) => isChat(s) && s.last.role === 'tool' && textOf(s.last).includes('being built')))
+  await until('pump on the board', async () => (await board.evaluate(() => document.getElementById('title')!.textContent)) === 'Pump')
+  await until('scene drawn', async () => (await visualFrame()).evaluate(() => {
+    const s = (window as any).__stage
+    if (!s?.ready || s.parts.length !== 4 || document.querySelectorAll('.s3d-tag').length !== 4 || !document.getElementById('steve-steps')) return false
+    let edges = 0
+    s.model.traverse((o: any) => { if (o.isLineSegments) edges++ })
+    return edges > 10 && s.parts.map((p: any) => p.name).join() === 'Housing,Impeller,Motor,Gear'
+  }), 30000)
+  await until('kept in the gallery', () => board.evaluate(() => [...(document.getElementById('history') as HTMLSelectElement).options].some((o) => o.textContent!.endsWith('Pump'))))
+  // Back, then forward again: the saved scene replays without the stream.
+  await board.evaluate(() => document.getElementById('back')!.click())
+  await until('previous visual', async () => (await board.evaluate(() => document.getElementById('title')!.textContent)) !== 'Pump')
+  await board.evaluate(() => document.getElementById('forward')!.click())
+  await until('pump replayed', async () => (await board.evaluate(() => document.getElementById('title')!.textContent)) === 'Pump' &&
+    (await (await visualFrame()).evaluate(() => (window as any).__stage?.ready && (window as any).__stage.parts.length === 4)), 30000)
+  const debugLog = readFileSync(join(profile, 'logs', 'steve.log'), 'utf8')
+  for (const line of ['[scene] first line after', '[scene] skipped a broken line', '[3D] scene complete: 5 shapes, 2 tour steps']) {
     if (!debugLog.includes(line)) throw new Error(`the debug log is missing: ${line}`)
   }
   await board.evaluate(() => document.getElementById('close')!.click())
