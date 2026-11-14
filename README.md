@@ -76,10 +76,11 @@ npm run build && npm run e2e    # end-to-end test of the real app (see below)
 npm run eval:pointing -- openai:gpt-6-luna anthropic:claude-sonnet-5-5   # pointing accuracy
 ```
 
-**End-to-end test (`npm run e2e`).** Launches the built app against a mock model server and drives it with the real mouse and keyboard (24 checks):
+**End-to-end test (`npm run e2e`).** Launches the built app against a mock model server and drives it with the real mouse and keyboard (25 checks):
 - **Pointing:** the cursor buddy follows the mouse, and a typed question with a screenshot makes it land on the exact pixel.
 - **Visuals:** the board loads Chart.js, Three.js, Mermaid and KaTeX with network access blocked; clicking a visual asks STEVE about it; a PubChem molecule renders; back/forward moves between visuals and Save writes a copy that loads its libraries from a CDN.
 - **3D kit:** a kit scene floats on top with no background, a real mouse click on a part asks STEVE about that part, the tour's next step cuts the model open, Save keeps the kit inside the file, and Close hides the window.
+- **Visual failures:** a model with broken shapes and a model call that fails both show a message on the visual (never an empty window) and appear in the debug log.
 - **Clipboard:** an unrelated question doesn't send the clipboard; "explain what I copied" does, and an answer can be copied back.
 - **Memory and tasks:** memory and a background task work.
 - **Computer control:** a real click lands on the right spot, a fresh screenshot follows each action, "Always allow" skips the question next time, and it stops on mouse movement and on Esc.
@@ -87,7 +88,7 @@ npm run eval:pointing -- openai:gpt-6-luna anthropic:claude-sonnet-5-5   # point
 - **Voice:** a full spoken turn runs (microphone to speech-to-text to answer to playback, sentence by sentence with pointing in sync, Deepgram faked inside the app), a hands-free reply is heard without the keys, and Esc stops the voice mid-answer.
 - **Cost:** tokens, listening time and speech are metered per service and shown in Settings > Usage, and a daily limit stops further model calls.
 
-By default the mock speaks Chat Completions (the local-server path); `E2E_API=responses npm run e2e` tests the Responses API that real OpenAI uses. Don't touch the computer while it runs. On macOS, give your terminal Screen Recording and Accessibility permission first. On Linux without a display, run it under Xvfb. Both modes pass 24/24 on Linux (Xvfb); run it once on Windows and once on macOS.
+By default the mock speaks Chat Completions (the local-server path); `E2E_API=responses npm run e2e` tests the Responses API that real OpenAI uses. Don't touch the computer while it runs. On macOS, give your terminal Screen Recording and Accessibility permission first. On Linux without a display, run it under Xvfb. Both modes pass 25/25 on Linux (Xvfb); run it once on Windows and once on macOS.
 
 **Pointing benchmark.** `eval/pointing/` ships 12 labelled cases from live websites (Wikipedia, GitHub, Hacker News, npm, Python docs), made by `npx electron eval/pointing/collect.mjs`. Add screenshots of the apps you care about (Blender, DaVinci Resolve) by hand as described in `eval/pointing/README.md`, then run it with your API keys in the environment.
 
@@ -100,7 +101,7 @@ By default the mock speaks Chat Completions (the local-server path); `E2E_API=re
 | `[keys]` `[mic]` `[stt]` | talk keys, which microphone is recording, the Deepgram connection (close codes, audio sent) and every phrase it heard |
 | `[turn]` `[model]` `[tool]` | each question, the model called and its token use, time to the first words, every tool call with its input, result and timing |
 | `[tts]` `[draw]` `[latency]` | each spoken sentence and how long the voice took, every point or drawing, key-up to first spoken word |
-| `[visual]` `[board]` | visuals requested and received, clicks on them, and console messages and errors from inside the visual itself |
+| `[visual]` `[board]` | visuals requested and received, where the window is, clicks on them, and console messages and errors from inside the visual itself; `[3D] ready` says how long the model took to draw and which graphics chip drew it |
 | `[control]` `[task]` | computer-control steps, permission answers and why it stopped; background task progress |
 | `[panel]` `[overlay]` `[audio]` | console messages, errors and crashes from STEVE's own windows |
 | `ERROR` | any error, with its stack trace |
@@ -128,7 +129,8 @@ The log never contains API keys, screenshots or audio. It does contain your ques
 - [ ] A research task with the browser agent opens a browser window you can watch.
 - [ ] The permission prompts on macOS appear and the setup screen shows them as granted.
 - [ ] The panel is frosted glass on macOS and switches between light and dark with the system.
-- [ ] "Explain how a jet engine works in 3D": the model floats with no background or black box behind it, turns when dragged, and the toolbar appears when the pointer is over it.
+- [ ] "Explain how a jet engine works in 3D": "Making …" shows straight away, then the model floats with no background or black box behind it, turns when dragged, and the toolbar appears when the pointer is over it.
+- [ ] On a Mac, ask for a 3D visual while on a second desktop (Space) and while an app is full screen: it appears where you are.
 - [ ] After a spoken answer, replying without the keys works, and staying quiet ends listening after about 6 seconds (the orange mic dot goes away).
 
 ## What's next

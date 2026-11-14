@@ -73,26 +73,52 @@ function place(win: BrowserWindow, keepCenter = false) {
   win.setBounds({ x: Math.round(x), y: Math.round(y), width, height })
 }
 
-async function present(i: number) {
+/** The board window, created on first use and placed beside the user's work when it isn't showing. */
+async function openBoard(): Promise<BrowserWindow> {
   if (!board || board.isDestroyed()) {
     board = new BrowserWindow({
       ...SIZES[0], show: false, frame: false, transparent: true, hasShadow: false, alwaysOnTop: true, skipTaskbar: true,
       minWidth: 360, minHeight: 300, title: 'STEVE', webPreferences: { preload: PRELOAD },
     })
     board.setAlwaysOnTop(true, 'floating')
+    // macOS: otherwise the window stays on the desktop (Space) where it first opened, and never shows over a
+    // full-screen app, so a visual made while you're elsewhere is invisible to you.
+    if (process.platform === 'darwin') board.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
     // Visuals may only ever show their own srcdoc, never navigate to a website.
     board.webContents.on('will-frame-navigate', (e) => { if (!e.isMainFrame && e.url !== 'about:srcdoc') e.preventDefault() })
     ready = loadPage(board, 'board')
   }
   await ready
+  if (!board.isVisible()) place(board)
+  return board
+}
+
+/** Shows the board straight away with "Making ..." while the model writes the visual, which can take a while. */
+export async function showMaking(title: string) {
+  const b = await openBoard()
+  log('board', `making "${title}"…`, { bounds: b.getBounds() })
+  b.webContents.send('making', title)
+  b.showInactive()
+}
+
+/** The visual could not be made: say why on the board, or (when interrupted) go back to what was showing. */
+export function visualFailed(message: string | null) {
+  if (!board || board.isDestroyed()) return
+  log('board', message ?? 'making the visual was interrupted')
+  if (message) board.webContents.send('failed', message)
+  else if (visuals[shown]) void present(shown)
+  else board.hide()
+}
+
+async function present(i: number) {
+  const b = await openBoard()
   const { title, html } = visuals[i]
   shown = i
   currentVisual = title
-  board.setTitle(title)
-  if (!board.isVisible()) place(board)
-  log('board', `showing "${title}" (${i + 1} of ${visuals.length})`, { kit: usesStage(html), bounds: board.getBounds() })
-  board.webContents.send('visual', { title, doc: wrapVisual(html), clear: usesStage(html), index: i, titles: visuals.map((v) => v.title) })
-  board.showInactive() // keep the keyboard in the app the user is working in
+  b.setTitle(title)
+  log('board', `showing "${title}" (${i + 1} of ${visuals.length})`, { kit: usesStage(html), bounds: b.getBounds(), visible: b.isVisible() })
+  b.webContents.send('visual', { title, doc: wrapVisual(html), clear: usesStage(html), index: i, titles: visuals.map((v) => v.title) })
+  b.showInactive() // keep the keyboard in the app the user is working in
 }
 
 export const hideBoard = () => { log('board', 'closed'); board?.hide() }

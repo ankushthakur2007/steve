@@ -56,7 +56,11 @@ export function stage(opts = {}) {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
   document.head.append(Object.assign(document.createElement('style'), { textContent: CSS }))
   for (const el of [document.documentElement, document.body]) el.style.background = background ?? 'transparent'
+  // Every problem is shown on the visual (a transparent window would otherwise just look empty) and
+  // printed to the console, which STEVE's debug log records.
   const fail = (msg) => {
+    console.error('[3D] ' + msg)
+    parent.postMessage({ type: 'steve-stage-failed' }, '*')
     if (document.querySelector('.s3d-error')) return
     document.body.append(Object.assign(document.createElement('p'), { className: 's3d-error', textContent: msg }))
   }
@@ -77,6 +81,14 @@ export function stage(opts = {}) {
   renderer.shadowMap.type = THREE.PCFShadowMap
   renderer.localClippingEnabled = true
   document.body.append(renderer.domElement)
+  const gl = renderer.getContext(), gpuInfo = gl.getExtension('WEBGL_debug_renderer_info')
+  const gpu = gpuInfo ? gl.getParameter(gpuInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)
+  // Laptops that switch graphics chips, or a busy GPU, can drop the 3D drawing.
+  renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault() // lets the browser restore it
+    fail('The graphics card stopped the 3D drawing. Close this and ask STEVE to show it again.')
+  })
+  renderer.domElement.addEventListener('webglcontextrestored', () => { console.info('[3D] graphics restored'); document.querySelector('.s3d-error')?.remove() })
   // Tags are laid out on screen each frame (not in 3D) so they can be kept apart and inside the window.
   const NS = 'http://www.w3.org/2000/svg'
   const layer = Object.assign(document.createElement('div'), { className: 's3d-labels' })
@@ -84,9 +96,21 @@ export function stage(opts = {}) {
   layer.append(lines)
   document.body.append(layer)
 
-  // Studio lighting: a soft room for reflections plus one shadow-casting key light.
-  const pmrem = new THREE.PMREMGenerator(renderer)
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+  // Studio lighting: a soft room for reflections plus one shadow-casting key light. Without a real
+  // graphics chip (software rendering) the room takes seconds to prepare, so a tiny sky gradient stands in.
+  const software = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu)
+  if (software) {
+    const px = new Uint8Array(32 * 16 * 4)
+    for (let y = 0; y < 16; y++) {
+      const v = Math.round(255 * (1 - 0.65 * (y / 15))) // bright above, darker below
+      for (let x = 0; x < 32; x++) px.set([v, v, v, 255], (y * 32 + x) * 4)
+    }
+    const sky = new THREE.DataTexture(px, 32, 16)
+    sky.mapping = THREE.EquirectangularReflectionMapping
+    sky.colorSpace = THREE.SRGBColorSpace
+    sky.needsUpdate = true
+    scene.environment = sky
+  } else scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04, 0.1, 100, { size: 128 }).texture
   const key = new THREE.DirectionalLight(0xffffff, 1.4)
   key.castShadow = true
   key.shadow.mapSize.set(2048, 2048)
@@ -389,6 +413,7 @@ export function stage(opts = {}) {
     const box = boxOf(model)
     if (box.isEmpty()) return false
     const sphere = box.getBoundingSphere(new THREE.Sphere())
+    if (!Number.isFinite(sphere.radius)) return 'broken'
     center = sphere.center
     size = sphere.radius || 1
     controls.target.copy(center)
@@ -485,11 +510,17 @@ export function stage(opts = {}) {
     last = now
     if (!started) {
       // The visual's own code builds the model synchronously after stage(), so lay out on the first frame.
-      if (!layout()) {
-        if ((waited += dt) > 3) { fail('This visual has nothing to show yet.'); renderer.setAnimationLoop(null) }
+      const laid = layout()
+      if (laid === 'broken') {
+        fail('Some shapes in this model have impossible sizes (not a number), so it can\'t be drawn. Ask STEVE to try again.')
+        return renderer.setAnimationLoop(null)
+      }
+      if (!laid) {
+        if ((waited += dt) > 3) { fail('This visual has nothing to show: no parts were added to the model.'); renderer.setAnimationLoop(null) }
         return
       }
       started = true
+      console.info(`[3D] ready after ${Math.round(performance.now())} ms: ${parts.length} parts, ${labels.length} tags, size ${size.toPrecision(3)}, ${innerWidth}x${innerHeight} px, graphics: ${gpu}${software ? ' (software, simple lighting)' : ''}`)
       parent.postMessage({ type: 'steve-stage-ready' }, '*')
       playIntro(() => { s.ready = true; pendingStep?.(); pendingStep = null })
     }

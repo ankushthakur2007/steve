@@ -8,16 +8,47 @@ const frame = $<HTMLIFrameElement>('frame')
 const history = $<HTMLSelectElement>('history')
 
 let index = 0, count = 0, freshTimer = 0, readyTimer = 0
+
+/** A pill in the middle of the window: "Making ..." (pulsing) or what went wrong. Messages also reach the debug log. */
+function status(text: string | null, error = false) {
+  $('status').hidden = !text
+  $('status').classList.toggle('error', error)
+  $('status-text').textContent = text ?? ''
+  if (error) console.warn(text)
+}
+function freshBar() {
+  // Show the toolbar for a moment so people see where to move, save or close the visual.
+  document.body.classList.add('fresh')
+  clearTimeout(freshTimer)
+  freshTimer = window.setTimeout(() => document.body.classList.remove('fresh'), 3000)
+}
+
+steve.on('making', (title: string) => {
+  clearTimeout(readyTimer)
+  $('title').textContent = title
+  frame.hidden = true
+  status(`Making "${title}"…`)
+  freshBar()
+})
+steve.on('failed', (message: string) => {
+  clearTimeout(readyTimer)
+  frame.hidden = true
+  status(message, true)
+  freshBar()
+})
+
 steve.on('visual', (v: { title: string; doc: string; clear: boolean; index: number; titles: string[] }) => {
   index = v.index
   count = v.titles.length
   $('title').textContent = v.title
   // 3D visuals have no background of their own, so the model sits right on the user's screen.
   frame.classList.toggle('clear', v.clear)
-  $('failed').hidden = true
+  frame.hidden = false
   clearTimeout(readyTimer)
-  // An invisible, broken 3D visual would just be a patch of screen that eats clicks: say so instead.
-  if (v.clear) readyTimer = window.setTimeout(() => ($('failed').hidden = false), 8000)
+  // A 3D visual has no background, so until its first frame is drawn the window would look empty:
+  // keep "Making ..." up until the kit says it's ready (or shows its own error), and give up after 20 s.
+  status(v.clear ? `Making "${v.title}"…` : null)
+  if (v.clear) readyTimer = window.setTimeout(() => status("This 3D visual didn't start (its code has a mistake). Ask STEVE to try again.", true), 20000)
   frame.srcdoc = v.doc
   history.replaceChildren(...v.titles.map((t, i) => Object.assign(document.createElement('option'), { value: String(i), textContent: `${i + 1}. ${t}` })))
   history.value = String(index)
@@ -25,10 +56,7 @@ steve.on('visual', (v: { title: string; doc: string; clear: boolean; index: numb
   $<HTMLButtonElement>('back').disabled = index === 0
   $<HTMLButtonElement>('forward').disabled = index >= count - 1
   $('saved').textContent = ''
-  // Show the toolbar for a moment so people see where to move, save or close the visual.
-  document.body.classList.add('fresh')
-  clearTimeout(freshTimer)
-  freshTimer = window.setTimeout(() => document.body.classList.remove('fresh'), 3000)
+  freshBar()
 })
 
 const go = (i: number) => { if (i >= 0 && i < count && i !== index) steve.send('board:go', i) }
@@ -56,7 +84,7 @@ $('save').addEventListener('click', async () => {
 let last = 0
 addEventListener('message', (e) => {
   if (e.source !== frame.contentWindow) return
-  if (e.data?.type === 'steve-stage-ready') { clearTimeout(readyTimer); $('failed').hidden = true; return }
+  if (e.data?.type === 'steve-stage-ready' || e.data?.type === 'steve-stage-failed') { clearTimeout(readyTimer); status(null); return }
   if (e.data?.type !== 'steve-select') return
   if (Date.now() - last < 800) return // one question per click, not per frame of a drag
   last = Date.now()

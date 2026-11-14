@@ -17,7 +17,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const RESPONSES = process.env.E2E_API === 'responses'
 type Msg = { role: string; content: any; tool_calls?: any[] }
 type Seen = { system: string; lastUser: string; last: Msg; messages: Msg[]; path: string }
-type Reply = { text?: string; tool?: { name: string; args: object } }
+type Reply = { text?: string; tool?: { name: string; args: object }; status?: number }
 const seen: Seen[] = []
 let callId = 0
 
@@ -56,7 +56,16 @@ s.arrow([-1.6, 0, 0.7], [1.6, 0, 0.7], { color: 'blue', label: 'Flow' })
 s.tour([{ caption: 'The whole thing' }, { caption: 'Inside', cut: { axis: 'z' } }])
 </script>`
 
+// A model mistake that used to leave an empty, invisible window: a shape whose size is not a number.
+const BROKEN_HTML = `<script type="module">
+import { stage } from 'steve3d'
+const s = stage(), { THREE } = s
+s.part('Bad', new THREE.Mesh(new THREE.BoxGeometry(NaN, 1, 1), s.mat('steel')))
+</script>`
+
 async function route(s: Seen): Promise<Reply> {
+  if (s.system.startsWith('You create one interactive visual') && s.lastUser.includes('BROKEN')) return { text: BROKEN_HTML }
+  if (s.system.startsWith('You create one interactive visual') && s.lastUser.includes('FAIL')) return { status: 400 }
   if (s.system.startsWith('You create one interactive visual')) return { text: '```html\n' + (s.lastUser.includes('3D') ? KIT_HTML : VISUAL_HTML) + '\n```' }
   if (s.system.startsWith('You are a background agent')) return { text: 'Report: Filament, Bevy and three.js compared.' }
   if (isControl(s)) {
@@ -74,6 +83,8 @@ async function route(s: Seen): Promise<Reply> {
   if (u.includes('long story')) return { text: 'One. Two. Three. Four. Five. Six. Seven. Eight.' }
   if (u.includes('I clicked')) return { text: 'That bar is the first value.' } // before 'chart': the click mentions "Test chart"
   if (u.includes('chart')) return { tool: { name: 'show_visual', args: { title: 'Test chart', brief: 'A bar chart of A and B' } } }
+  if (u.includes('broken model')) return { tool: { name: 'show_visual', args: { title: 'Broken model', brief: 'BROKEN 3D' } } }
+  if (u.includes('failing visual')) return { tool: { name: 'show_visual', args: { title: 'Failing visual', brief: 'FAIL' } } }
   if (u.includes('jet engine')) return { tool: { name: 'show_visual', args: { title: 'Jet engine', brief: 'A 3D jet engine' } } }
   if (u.includes('caffeine')) return { tool: { name: 'show_molecule', args: { name: 'caffeine' } } }
   if (u.includes('remember')) return { tool: { name: 'remember', args: { fact: 'likes cats' } } }
@@ -158,7 +169,11 @@ const server = createServer(async (req, res) => {
     path: req.url!,
   }
   seen.push(s)
-  try { (responses ? sendResponses : send)(res, !!body.stream, await route(s)) } catch { /* client went away */ }
+  try {
+    const r = await route(s)
+    if (r.status) { res.writeHead(r.status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'Mock model error', type: 'invalid_request_error' } })); return }
+    ;(responses ? sendResponses : send)(res, !!body.stream, r)
+  } catch { /* client went away */ }
 })
 await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
 const port = (server.address() as { port: number }).port
@@ -297,8 +312,7 @@ await check('visual gallery: back/forward between visuals, and Save writes a cop
 await check('3D kit: the model floats on screen, a real click on a part asks about it, the tour cuts it open, Save keeps it', async () => {
   await ask('show me a jet engine in 3D')
   await until('3D title', async () => (await board.evaluate(() => document.getElementById('title')!.textContent)) === 'Jet engine')
-  const frame = await visualFrame()
-  await until('kit scene ready', () => frame.evaluate(() => {
+  await until('kit scene ready', async () => (await visualFrame()).evaluate(() => {
     const s = (window as any).__stage
     return s?.ready && s.parts.length === 2 && document.querySelectorAll('.s3d-tag').length === 3 && !!document.getElementById('steve-steps')
   }), 30000)
@@ -306,7 +320,7 @@ await check('3D kit: the model floats on screen, a real click on a part asks abo
   if (!floating) throw new Error('the visual window is not floating on top')
   if (!(await board.evaluate(() => document.getElementById('frame')!.classList.contains('clear')))) throw new Error('the 3D visual has a background')
   // Click the middle of the body with the real mouse, through the transparent window.
-  const at = await frame.evaluate(() => {
+  const at = await (await visualFrame()).evaluate(() => {
     const s = (window as any).__stage
     s.controls.autoRotate = false
     const p = s.parts[0].object.getWorldPosition(new s.THREE.Vector3()).project(s.camera)
@@ -321,8 +335,8 @@ await check('3D kit: the model floats on screen, a real click on a part asks abo
   await sleep(300)
   await nut.mouse.click(nut.Button.LEFT)
   await until('question about the clicked part', () => seen.slice(from).some((s) => s.lastUser.includes('(I clicked "Body" in the visual "Jet engine": the main body.)')))
-  await frame.evaluate(() => (document.querySelectorAll('#steve-steps button')[3] as HTMLButtonElement).click()) // next step: the cutaway
-  await until('model cut open', () => frame.evaluate(() => {
+  await (await visualFrame()).evaluate(() => (document.querySelectorAll('#steve-steps button')[3] as HTMLButtonElement).click()) // next step: the cutaway
+  await until('model cut open', async () => (await visualFrame()).evaluate(() => {
     const m = (window as any).__stage.parts[0].object.material
     return m.clippingPlanes?.length === 1 && m.clippingPlanes[0].constant < 0.4
   }))
@@ -334,6 +348,24 @@ await check('3D kit: the model floats on screen, a real click on a part asks abo
   if (saved.includes('steve://') || !saved.includes('"steve3d":"data:text/javascript;base64,')) throw new Error('saved 3D copy does not carry the kit')
   await board.evaluate(() => document.getElementById('close')!.click())
   await until('visual window closed', () => app.evaluate(({ BrowserWindow }) => !BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('board.html'))!.isVisible()))
+})
+
+await check('visual failures show a message instead of an empty window, and reach the debug log', async () => {
+  await ask('show me the broken model')
+  await until('broken model on the board', async () => (await board.evaluate(() => document.getElementById('title')!.textContent)) === 'Broken model')
+  await until('the 3D kit says what is wrong', async () => (await visualFrame()).evaluate(() =>
+    !!document.querySelector('.s3d-error')?.textContent?.includes('impossible sizes')))
+  await until('idle', idle)
+  await ask('show me the failing visual')
+  await until('the board says the visual could not be made', () => board.evaluate(() => {
+    const st = document.getElementById('status')!
+    return !st.hidden && st.classList.contains('error') && st.textContent!.includes('Couldn\'t make "Failing visual"')
+  }))
+  const debugLog = readFileSync(join(profile, 'logs', 'steve.log'), 'utf8')
+  for (const line of ['[board] making "Broken model"', '[visual] console error: [3D] Some shapes', '[tool] show_visual {"title":"Failing visual","brief":"FAIL"} failed']) {
+    if (!debugLog.includes(line)) throw new Error(`the debug log is missing: ${line}`)
+  }
+  await board.evaluate(() => document.getElementById('close')!.click())
 })
 
 await check('copied-text helper: reads the clipboard only when asked, and can copy an answer back', async () => {

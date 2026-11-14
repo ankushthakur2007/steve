@@ -7,7 +7,7 @@ import {
 import { release } from 'node:os'
 import { z } from 'zod'
 import { answerTask, initTasks, listTasks, startTask, stopTask } from './agents'
-import { currentVisual, goVisual, hideBoard, moleculeHtml, registerLibProtocol, resizeBoard, saveVisual, showVisual } from './board'
+import { currentVisual, goVisual, hideBoard, moleculeHtml, registerLibProtocol, resizeBoard, saveVisual, showMaking, showVisual, visualFailed } from './board'
 import { extractHtml, usesStage } from './visual'
 import { chat, missingKey, model, note, seedHistory } from './brain'
 import { capture, type Shot } from './capture'
@@ -86,13 +86,20 @@ function chatTools(signal: AbortSignal): ToolSet {
       }),
       execute: async ({ title, brief }, { abortSignal }) => {
         setState('working')
+        await showMaking(title)
         log('visual', `asking ${getSettings().models.visual} for "${title}"`, brief)
-        const { text, totalUsage } = await generateText({ model: model('visual'), system: VISUAL_PROMPT, prompt: brief, abortSignal })
-        addTokens(getSettings().models.visual, totalUsage)
-        const html = extractHtml(text)
-        log('visual', `got ${html.length} chars of HTML${usesStage(html) ? ' (3D kit)' : ''}`, { in: totalUsage.inputTokens, out: totalUsage.outputTokens })
-        keep('last-visual.html', html) // open it in a browser, or read it, when a visual looks wrong
-        await showVisual(title, html)
+        try {
+          const { text, totalUsage } = await generateText({ model: model('visual'), system: VISUAL_PROMPT, prompt: brief, abortSignal })
+          addTokens(getSettings().models.visual, totalUsage)
+          const html = extractHtml(text)
+          log('visual', `got ${html.length} chars of HTML${usesStage(html) ? ' (3D kit)' : ''}`, { in: totalUsage.inputTokens, out: totalUsage.outputTokens })
+          keep('last-visual.html', html) // open it in a browser, or read it, when a visual looks wrong
+          if (!/<(script|svg|canvas|body|div|html)\b/i.test(html)) throw new Error('the model replied without a visual')
+          await showVisual(title, html)
+        } catch (e) {
+          visualFailed(abortSignal?.aborted ? null : `Couldn't make "${title}": ${errorText(e)}`)
+          throw e
+        }
         return `The visual "${title}" is showing on the user's screen.`
       },
     }),
@@ -100,7 +107,8 @@ function chatTools(signal: AbortSignal): ToolSet {
       description: 'Show an interactive 3D model of a real molecule (from PubChem) floating on the user\'s screen.',
       inputSchema: z.object({ name: z.string().describe('Common or IUPAC name, e.g. "caffeine"') }),
       execute: async ({ name }) => {
-        await showVisual(name, await moleculeHtml(name))
+        await showMaking(name)
+        try { await showVisual(name, await moleculeHtml(name)) } catch (e) { visualFailed(`Couldn't show ${name}: ${errorText(e)}`); throw e }
         return `A 3D model of ${name} is showing on the user's screen. The user can click atoms.`
       },
     }),

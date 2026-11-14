@@ -33,8 +33,14 @@
         color-scheme: normal; /* same as the visual's, or Chromium paints an opaque backdrop behind it */
       }
       iframe.clear { top: 46px; left: 0; width: 100%; height: calc(100% - 46px); border-radius: 0; background: transparent; box-shadow: none; }
-      #failed { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; max-width: 320px; padding: 14px 18px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 12px 36px #0004; text-align: center; }
-      @media (prefers-reduced-motion: reduce) { #bar { transition: none; } }
+      /* "Making ..." while the model writes the visual, or why it didn't work. */
+      #status { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 10px; margin: 0; max-width: min(420px, calc(100% - 32px)); padding: 12px 18px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 12px 36px #0004; }
+      #status[hidden] { display: none; }
+      #status.error { border-radius: 12px; }
+      #status .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--steve); box-shadow: 0 0 0 1.5px var(--ink); animation: pulse 1s ease-in-out infinite alternate; }
+      #status.error .dot { background: var(--rec); animation: none; }
+      @keyframes pulse { to { transform: scale(.55); opacity: .6; } }
+      @media (prefers-reduced-motion: reduce) { #bar { transition: none; } #status .dot { animation: none; } }
     </style>
   </head>
   <body>
@@ -50,7 +56,7 @@
     </div>
     <!-- No allow-same-origin: the visual gets an opaque origin and cannot reach this page or Node. -->
     <iframe id="frame" sandbox="allow-scripts" title="Visual"></iframe>
-    <p id="failed" hidden>This 3D visual didn't load. Ask STEVE to try again.</p>
+    <p id="status" role="status" hidden><span class="dot"></span><span id="status-text"></span></p>
     <script type="module" src="./board.ts"></script>
   </body>
 </html>
