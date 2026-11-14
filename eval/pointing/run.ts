@@ -10,11 +10,9 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CHAT_PROMPT } from '../../src/main/prompts.ts'
 import { createSentenceStream } from '../../src/main/tags.ts'
+import { tokenCost } from '../../src/main/prices.ts' // add the models you test to MODEL_PRICES there
 
 type Case = { image: string; width: number; height: number; question: string; box: [number, number, number, number] }
-
-// $ per million tokens (input, output). Add models you test.
-const PRICES: Record<string, [number, number]> = { 'openai:gpt-6-luna': [0.1, 0.5] }
 
 const dir = import.meta.dirname
 const cases: Case[] = JSON.parse(readFileSync(join(dir, 'cases.json'), 'utf8'))
@@ -67,7 +65,7 @@ for (const id of models) {
     }
   }
   const n = cases.length
-  const price = PRICES[id]
-  const cost = price ? `$${((inTok * price[0] + outTok * price[1]) / 1e6 / n).toFixed(5)}` : 'unknown $'
+  const total = tokenCost(id, inTok, outTok)
+  const cost = total === null ? 'unknown $' : `$${(total / n).toFixed(5)}`
   console.log(`=> ${hits}/${n} hits (${Math.round((100 * hits) / n)}%), ${(ms / n / 1000).toFixed(2)} s average, ${cost} per call, ${errors} errors`)
 }

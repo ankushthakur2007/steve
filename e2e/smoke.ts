@@ -60,12 +60,14 @@ async function route(s: Seen): Promise<Reply> {
     return { text: `It's right here [POINT:${+w / 2},${+h / 2}:Center] in the middle. Anything else?` }
   }
   if (u.includes('long story')) return { text: 'One. Two. Three. Four. Five. Six. Seven. Eight.' }
+  if (u.includes('I clicked')) return { text: 'That bar is the first value.' } // before 'chart': the click mentions "Test chart"
   if (u.includes('chart')) return { tool: { name: 'show_visual', args: { title: 'Test chart', brief: 'A bar chart of A and B' } } }
-  if (u.includes('I clicked')) return { text: 'That bar is the first value.' }
   if (u.includes('caffeine')) return { tool: { name: 'show_molecule', args: { name: 'caffeine' } } }
   if (u.includes('remember')) return { tool: { name: 'remember', args: { fact: 'likes cats' } } }
   if (u.includes('research')) return { tool: { name: 'start_task', args: { goal: 'Compare open-source rendering engines' } } }
   if (u.includes('control')) return { tool: { name: 'control_computer', args: { goal: u.includes('wait') ? 'Click and wait' : 'Click the middle' } } }
+  if (u.includes('what I copied')) return { tool: { name: 'read_clipboard', args: {} } }
+  if (u.includes('copy it')) return { tool: { name: 'copy_to_clipboard', args: { text: 'Hola, mundo' } } }
   return { text: 'Okay.' }
 }
 
@@ -264,6 +266,33 @@ await check('3D molecule from PubChem renders (WebGL)', async () => {
     !!document.querySelector('canvas') && document.body.textContent!.includes('caffeine')), 30000)
 })
 
+await check('visual gallery: back/forward between visuals, and Save writes a copy that opens in any browser', async () => {
+  await until('two visuals', () => board.evaluate(() => (document.getElementById('history') as HTMLSelectElement).options.length === 2))
+  await board.evaluate(() => document.getElementById('back')!.click())
+  await until('first visual shown again', async () =>
+    (await board.evaluate(() => document.getElementById('title')!.textContent)) === 'Test chart' &&
+    (await (await visualFrame()).evaluate(() => !!document.getElementById('c'))))
+  const out = join(profile, 'saved-visual.html')
+  await app.evaluate(({ dialog }, p) => { dialog.showSaveDialog = (async () => ({ canceled: false, filePath: p })) as any }, out)
+  await board.evaluate(() => document.getElementById('save')!.click())
+  await until('saved file', () => existsSync(out))
+  const saved = readFileSync(out, 'utf8')
+  if (saved.includes('steve://') || !saved.includes('https://cdn.jsdelivr.net/npm/chart.js@')) throw new Error('saved copy still points at steve:// libraries')
+  if (!saved.includes('Test chart')) throw new Error('saved copy is not the visual on screen')
+})
+
+await check('copied-text helper: reads the clipboard only when asked, and can copy an answer back', async () => {
+  await app.evaluate(({ clipboard }) => clipboard.writeText('STEVE-CLIP-42: segmentation fault'))
+  const before = await ask('hello there')
+  await until('unrelated answer', () => seen.slice(before).some(isChat))
+  const from = await ask('explain what I copied')
+  if (seen.slice(before, from).some((s) => JSON.stringify(s.messages).includes('STEVE-CLIP-42'))) throw new Error('the clipboard was sent without being asked for')
+  await until('clipboard text reached the model', () => seen.slice(from).some((s) => isChat(s) && textOf(s.last).includes('STEVE-CLIP-42')))
+  await until('the panel says the clipboard was read', () => panel.evaluate(() => document.getElementById('log')!.textContent!.includes('Read your clipboard.')))
+  await ask('translate it to Spanish and copy it')
+  await until('answer on the clipboard', () => app.evaluate(({ clipboard }) => clipboard.readText()).then((t) => t === 'Hola, mundo'))
+})
+
 await check('memory: remember writes facts.md', async () => {
   await ask('please remember I like cats')
   const facts = join(profile, 'memory', 'facts.md')
@@ -357,7 +386,10 @@ await check('Ctrl+Alt+<key> shortcuts do not trigger push-to-talk', async () => 
 // ---------- Voice: Deepgram is faked inside the app; microphone, playback, model and overlay are real ----------
 await app.evaluate(({ ipcMain }) => {
   const g = globalThis as any
-  const v = (g.voice = { speak: [] as { text: string; auth: string }[], sttUrl: '', sttAuth: '', sttBytes: 0, played: 0, transcript: 'Where is the center of the screen?' })
+  const v = (g.voice = {
+    speak: [] as { text: string; auth: string }[], sttUrl: '', sttAuth: '', sttBytes: 0, played: 0, transcript: 'Where is the center of the screen?',
+    handsFree: 0, followText: '', // hands-free sessions opened, and what the user "says" in the next one
+  })
   ipcMain.on('played', () => v.played++)
   // 0.3 s, 440 Hz, 16-bit mono WAV standing in for Deepgram's speech.
   const rate = 16000, n = rate * 0.3, wav = Buffer.alloc(44 + n * 2)
@@ -374,18 +406,35 @@ await app.evaluate(({ ipcMain }) => {
   g.WebSocket = class extends EventTarget {
     static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3
     readyState = 0
+    handsFree: boolean
+    answered = false
     constructor(url: string, opts: any) {
       super()
       v.sttUrl = url
       v.sttAuth = opts?.headers?.Authorization
+      this.handsFree = url.includes('endpointing') // a follow-up session ends on a pause, not a key
+      if (this.handsFree) v.handsFree++
       setTimeout(() => { this.readyState = 1; this.dispatchEvent(new Event('open')) }, 50)
     }
+    result(transcript: string, speechFinal = false) {
+      const r = { type: 'Results', is_final: true, speech_final: speechFinal, channel: { alternatives: [{ transcript }] } }
+      this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(r) }))
+    }
     send(m: any) {
-      if (typeof m !== 'string') { v.sttBytes += m.byteLength; return }
+      if (typeof m !== 'string') {
+        v.sttBytes += m.byteLength
+        // Hands-free: the user replies, then pauses.
+        if (this.handsFree && v.followText && !this.answered) {
+          const text = v.followText
+          v.followText = ''
+          this.answered = true
+          setTimeout(() => this.result(text, true), 50)
+        }
+        return
+      }
       if (JSON.parse(m).type !== 'CloseStream') return
       setTimeout(() => {
-        const result = { type: 'Results', is_final: true, channel: { alternatives: [{ transcript: v.transcript }] } }
-        this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(result) }))
+        if (!this.handsFree) this.result(v.transcript)
         this.close()
       }, 100)
     }
@@ -406,6 +455,7 @@ await check('voice turn: hold to talk, transcript, answer spoken sentence by sen
   await until('saved', () => panel.evaluate(() => document.getElementById('saved')!.textContent === 'Saved.'))
   await panel.evaluate(() => (document.querySelector('nav button[data-tab="chat"]') as HTMLElement).click())
   await nut.mouse.setPosition(new nut.Point(40, 40))
+  await app.evaluate(() => { (globalThis as any).voice.followText = 'thanks that helps' }) // the reply for the next check
 
   await nut.keyboard.pressKey(nut.Key.LeftControl, nut.Key.LeftAlt)
   await sleep(1200)
@@ -414,12 +464,20 @@ await check('voice turn: hold to talk, transcript, answer spoken sentence by sen
   const v = await voice()
   if (!v.sttUrl.startsWith('wss://api.deepgram.com/v1/listen?model=nova-3')) throw new Error(`speech-to-text URL ${v.sttUrl}`)
   if (v.sttAuth !== 'Token dummy-deepgram-key' || v.sttBytes < 1000) throw new Error(`speech-to-text got ${v.sttBytes} bytes, auth ${v.sttAuth}`)
-  const spoken = v.speak.map((x: { text: string }) => x.text)
+  const spoken = v.speak.map((x: { text: string }) => x.text).slice(0, 2) // a hands-free follow-up may already be answering
   if (JSON.stringify(spoken) !== JSON.stringify(["It's right here in the middle.", 'Anything else?'])) throw new Error(`spoke ${JSON.stringify(spoken)}`)
   if (v.speak[0].auth !== 'Token dummy-deepgram-key') throw new Error('text-to-speech request without the key')
   const want = `translate(${display.width / 2}px, ${display.height / 2}px)`
   if ((await buddyAt()) !== want) throw new Error(`buddy at ${await buddyAt()}, expected ${want}`)
   if (!logs.join('').includes('[latency] key-up to first sentence')) throw new Error('no latency log')
+})
+
+await check('hands-free follow-up: after a spoken answer STEVE keeps listening and takes a reply without the keys', async () => {
+  await until('reply heard without the keys', () => seen.some((s) => isChat(s) && s.lastUser.includes('thanks that helps')), 15000)
+  const v = await voice()
+  if (v.handsFree < 1) throw new Error('no hands-free listening session was opened')
+  // Silence after the next answer: STEVE stops listening on its own.
+  await until('idle after a quiet follow-up', idle, 15000)
 })
 
 await check('Esc stops STEVE mid-answer', async () => {
@@ -434,6 +492,27 @@ await check('Esc stops STEVE mid-answer', async () => {
   const after = (await voice()).played
   if (after > stoppedAt) throw new Error(`${after - stoppedAt} more sentences played after Esc`)
   if (after - before >= 8) throw new Error('the whole answer played')
+})
+
+await check('cost meter: model tokens, listening and speech are counted per service and shown in the panel', async () => {
+  const day = new Date().toLocaleDateString('sv')
+  const u = JSON.parse(readFileSync(join(profile, 'usage.json'), 'utf8'))[day]
+  if (!(u?.usd?.openai > 0) || !(u.listenSeconds > 0) || !(u.spokenChars > 0) || !(u.usd.deepgram > 0)) throw new Error(`usage.json: ${JSON.stringify(u)}`)
+  await panel.evaluate(() => (document.querySelector('nav button[data-tab="settings"]') as HTMLElement).click())
+  await until('usage bars', () => panel.evaluate(() => /OpenAI/.test(document.getElementById('bars')!.textContent!) && /Deepgram/.test(document.getElementById('bars')!.textContent!)))
+})
+
+await check('daily limit: STEVE stops spending once today reaches it', async () => {
+  await panel.evaluate(() => {
+    (document.querySelector('#tab-settings [data-setting="dailyLimit"]') as HTMLInputElement).value = '0.000001'
+    document.getElementById('saved')!.textContent = ''
+    document.getElementById('save')!.click()
+  })
+  await until('saved', () => panel.evaluate(() => document.getElementById('saved')!.textContent === 'Saved.'))
+  await panel.evaluate(() => (document.querySelector('nav button[data-tab="chat"]') as HTMLElement).click())
+  const from = await ask('hello again')
+  await until('limit message', () => panel.evaluate(() => document.getElementById('log')!.textContent!.includes('spending limit')))
+  if (seen.slice(from).some(isChat)) throw new Error('the model was called over the limit')
 })
 
 await check(`every model call used the ${RESPONSES ? 'Responses' : 'Chat Completions'} API`, async () => {

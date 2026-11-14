@@ -10,6 +10,7 @@ import { capture, type Shot } from './capture'
 import { imageToScreen } from './coords'
 import { CONTROL_PROMPT } from './prompts'
 import { getSettings, saveSettings } from './settings'
+import { addTokens } from './usage'
 import { errorText, sleep } from './windows'
 
 let active: AbortController | null = null
@@ -55,7 +56,7 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
       defaultId: 0,
       cancelId: 2,
       message: 'Let STEVE use your mouse and keyboard?',
-      detail: `Task: ${goal}\n\n"Always allow" turns on autopilot: STEVE won't ask again (turn it off in Settings > Agents). It still asks before anything consequential.\n\nPress Esc or move your mouse at any time to take back control.`,
+      detail: `Task: ${goal}\n\n"Always allow" turns on autopilot: STEVE won't ask again (turn it off in Settings > Mouse and keyboard). It still asks before anything consequential.\n\nPress Esc or move your mouse at any time to take back control.`,
     })
     if (response === 2) return 'The user declined to give control.'
     if (response === 0) saveSettings({ autopilot: true })
@@ -64,7 +65,7 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
   const abort = new AbortController()
   active = abort
   outer?.addEventListener('abort', () => abort.abort())
-  ui.banner('STEVE is using your mouse and keyboard · press Esc or move the mouse to stop')
+  ui.banner('STEVE is using your mouse and keyboard. To stop, move the mouse or press')
   keyboard.config.autoDelayMs = 15
 
   let shot = await capture()
@@ -175,6 +176,7 @@ export async function controlComputer(goal: string, ui: ControlUi, outer?: Abort
       stopWhen: isStepCount(40),
       abortSignal: abort.signal,
       prepareStep: ({ messages }) => ({ messages: keepRecentScreenshots(messages, 2) }),
+      onStepFinish: (step) => addTokens(getSettings().models.agent, step.usage),
     })
     return res.text || 'Done.'
   } catch (e) {

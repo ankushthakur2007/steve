@@ -29,12 +29,15 @@ On macOS, grant **Microphone**, **Screen Recording** and **Accessibility** when 
 ## Using STEVE
 
 - **Talk:** hold **Ctrl + Alt** (**Control + Option** on Mac), speak, release. Press again while it is talking to interrupt.
-- **Stop:** **Esc** stops speech and takes back control of the mouse.
-- **Type:** **Ctrl + Shift + Space** (**Cmd + Shift + Space**) opens the panel. "include my screen" decides whether STEVE sees your screen.
-- **Visuals:** ask "show me how merge sort works" or "explain how a car engine works in 3D". Click parts of a visual to ask about them.
+- **Reply hands-free:** after a spoken answer STEVE keeps listening for about 6 seconds, so you can just answer back. It looks at your screen again only if you speak. Turn it off under Settings > Conversation.
+- **Stop:** **Esc** stops speech, ends hands-free listening, and takes back control of the mouse.
+- **Type:** **Ctrl + Shift + Space** (**Cmd + Shift + Space**) opens the panel. The **Screen** toggle decides whether STEVE sees your screen. The suggestions on the empty chat are a quick way to try things.
+- **Copied text:** copy something and say "explain what I copied" or "translate this and copy it". STEVE reads the clipboard only when you ask, says so in the chat, and can put its answer back on the clipboard.
+- **Visuals:** ask "show me how merge sort works" or "explain how a car engine works in 3D". Click parts of a visual to ask about them. The back and forward buttons (or the list) go through every visual from this session; **Save** writes a web page that opens in any browser.
 - **Tasks:** ask "research the best open-source rendering engines for my project". The Tasks tab shows progress, questions from the agent, and a Stop button. Agents can use a browser window you can watch.
-- **Do it for me:** ask "open my downloads folder and sort the PDFs into a folder". The first time, STEVE asks permission; choose **Always allow** to switch on autopilot so it never asks again (turn it off under Settings > Agents). It shows a red banner while in control, asks before anything consequential, and stops as soon as you move the mouse or press Esc.
-- **Memory:** "remember that I use DaVinci Resolve 20" or "forget that". Settings > Memory opens or deletes the memory folder. Screenshots are never stored.
+- **Do it for me:** ask "open my downloads folder and sort the PDFs into a folder". The first time, STEVE asks permission; choose **Always allow** to switch on autopilot so it never asks again (turn it off under Settings > Mouse and keyboard). It shows a red banner and a red screen edge while in control, asks before anything consequential, and stops as soon as you move the mouse or press Esc.
+- **Memory:** "remember that I use DaVinci Resolve 20" or "forget that". Settings > Conversation opens or deletes the memory folder. Screenshots are never stored.
+- **Cost:** the panel header shows what STEVE has cost today. Settings > Usage breaks this month down by service and lets you set a daily limit; once today reaches it, STEVE stops calling paid services until tomorrow.
 
 Any model role can be changed in Settings > Models, e.g. `anthropic:claude-sonnet-5-5`, or pointed at a local OpenAI-compatible server.
 
@@ -52,8 +55,11 @@ Electron main process (TypeScript, holds the API keys)
   agents.ts   background tasks with MCP tools (Playwright browser, your own servers)
   control.ts  mouse and keyboard (nut-js) with permission, banner and kill switches
   memory.ts   plain files: facts.md and daily conversation logs
+  usage.ts    the cost meter (usage.json); prices in prices.ts
 Windows: overlay per display (click-through), panel, board, hidden audio window
 ```
+
+**Design.** STEVE is a small yellow character with an ink outline. Its eyes follow what it's looking at, and everything it draws on screen is in the same yellow "marker" ink, with a dark under-stroke so it reads on any background. Anything STEVE says (captions, labels, its chat replies) is set in Recursive Casual, a free variable font bundled with the app. The rest of the interface uses the system font and follows the system's light or dark mode, with frosted glass on macOS. The colours live in `src/renderer/theme.css`; the app icon is `build/icon.svg`, rendered to `build/icon.png` with `npx electron build/icon.mjs`.
 
 Phases from the plan and where they live: see/talk/point (`index.ts`, `brain.ts`, `overlay.ts`), 2D and 3D visuals (`board.ts`, `visual.ts`), memory and privacy (`memory.ts`, panel setup), agents and browser (`agents.ts`), computer control (`control.ts`), connected apps (Settings > Agents > MCP servers).
 
@@ -66,15 +72,17 @@ npm run build && npm run e2e    # end-to-end test of the real app (see below)
 npm run eval:pointing -- openai:gpt-6-luna anthropic:claude-sonnet-5-5   # pointing accuracy
 ```
 
-**End-to-end test (`npm run e2e`).** Launches the built app against a mock model server and drives it with the real mouse and keyboard (18 checks):
+**End-to-end test (`npm run e2e`).** Launches the built app against a mock model server and drives it with the real mouse and keyboard (23 checks):
 - **Pointing:** the cursor buddy follows the mouse, and a typed question with a screenshot makes it land on the exact pixel.
-- **Visuals:** the board loads Chart.js, Three.js, Mermaid and KaTeX with network access blocked; clicking a visual asks STEVE about it; a PubChem molecule renders.
+- **Visuals:** the board loads Chart.js, Three.js, Mermaid and KaTeX with network access blocked; clicking a visual asks STEVE about it; a PubChem molecule renders; back/forward moves between visuals and Save writes a copy that loads its libraries from a CDN.
+- **Clipboard:** an unrelated question doesn't send the clipboard; "explain what I copied" does, and an answer can be copied back.
 - **Memory and tasks:** memory and a background task work.
-- **Computer control:** a real click lands on the right spot, a fresh screenshot follows each action, and it stops on mouse movement and on Esc.
+- **Computer control:** a real click lands on the right spot, a fresh screenshot follows each action, "Always allow" skips the question next time, and it stops on mouse movement and on Esc.
 - **Keys and talk keys:** API keys are stored encrypted; Ctrl+Alt is detected and Ctrl+Alt+T is ignored.
-- **Voice:** a full spoken turn runs (microphone to speech-to-text to answer to playback, sentence by sentence with pointing in sync, Deepgram faked inside the app), and Esc stops the voice mid-answer.
+- **Voice:** a full spoken turn runs (microphone to speech-to-text to answer to playback, sentence by sentence with pointing in sync, Deepgram faked inside the app), a hands-free reply is heard without the keys, and Esc stops the voice mid-answer.
+- **Cost:** tokens, listening time and speech are metered per service and shown in Settings > Usage, and a daily limit stops further model calls.
 
-By default the mock speaks Chat Completions (the local-server path); `E2E_API=responses npm run e2e` tests the Responses API that real OpenAI uses. Don't touch the computer while it runs. On macOS, give your terminal Screen Recording and Accessibility permission first. On Linux without a display, run it under Xvfb. Both modes pass 18/18 on Linux (Xvfb); run it once on Windows and once on macOS.
+By default the mock speaks Chat Completions (the local-server path); `E2E_API=responses npm run e2e` tests the Responses API that real OpenAI uses. Don't touch the computer while it runs. On macOS, give your terminal Screen Recording and Accessibility permission first. On Linux without a display, run it under Xvfb. Both modes pass 23/23 on Linux (Xvfb); run it once on Windows and once on macOS.
 
 **Pointing benchmark.** `eval/pointing/` ships 12 labelled cases from live websites (Wikipedia, GitHub, Hacker News, npm, Python docs), made by `npx electron eval/pointing/collect.mjs`. Add screenshots of the apps you care about (Blender, DaVinci Resolve) by hand as described in `eval/pointing/README.md`, then run it with your API keys in the environment.
 
@@ -94,9 +102,9 @@ By default the mock speaks Chat Completions (the local-server path); `E2E_API=re
 - [ ] With real keys: you hear the answer, and key-release to first spoken word is under 1.5 s (`[latency]` in the terminal).
 - [ ] A research task with the browser agent opens a browser window you can watch.
 - [ ] The permission prompts on macOS appear and the setup screen shows them as granted.
+- [ ] The panel is frosted glass on macOS and switches between light and dark with the system.
+- [ ] After a spoken answer, replying without the keys works, and staying quiet ends listening after about 6 seconds (the orange mic dot goes away).
 
-## Not yet done
+## What's next
 
-- Code signing and notarization (needed before sharing installers; Apple charges $99/year).
-- A curated pack of labelled 3D models for flagship demos (engines, etc.); today 3D models are built from primitives by the AI or come from PubChem.
-- "Hey Steve" wake word, offline speech models, auto-update.
+See [ROADMAP.md](ROADMAP.md) for the plan: what to build next, in what order, and what each step costs.

@@ -9,6 +9,7 @@ import { z } from 'zod'
 import { model, openai, providerOf } from './brain'
 import { AGENT_PROMPT } from './prompts'
 import { getSettings, type McpServer } from './settings'
+import { addTokens } from './usage'
 import { errorText } from './windows'
 
 export type TaskView = {
@@ -117,6 +118,7 @@ async function run(t: Task) {
       stopWhen: isStepCount(50),
       abortSignal: t.abort.signal,
       onStepFinish: (step) => {
+        addTokens(getSettings().models.agent, step.usage)
         for (const c of step.toolCalls) log(`→ ${c.toolName} ${JSON.stringify(c.input)}`)
         if (step.text) log(step.text)
       },

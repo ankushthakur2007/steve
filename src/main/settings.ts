@@ -15,6 +15,8 @@ export const defaults = {
   memory: true,
   browserAgent: true,
   autopilot: false, // set by "Always allow": computer control starts without asking each time
+  followUps: true, // after a spoken answer, keep listening a few seconds for a reply without the keys
+  dailyLimit: 0, // dollars per day across all services; 0 means no limit
 
   browserChannel: process.platform === 'win32' ? 'msedge' : 'chrome',
   mcpServers: {} as Record<string, McpServer>,

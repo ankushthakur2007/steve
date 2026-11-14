@@ -1,7 +1,7 @@
 // The board: a normal window showing AI-generated HTML visuals in a sandboxed iframe
 // (no network, no Node, opaque origin). Bundled libraries are served from steve://lib/.
-import { app, BrowserWindow, protocol } from 'electron'
-import { readFile } from 'node:fs/promises'
+import { app, BrowserWindow, dialog, protocol } from 'electron'
+import { readFile, writeFile } from 'node:fs/promises'
 import { extname, join, normalize, sep } from 'node:path'
 import { parseSdf } from './sdf'
 import { wrapVisual } from './visual'
@@ -41,7 +41,18 @@ let board: BrowserWindow | null = null
 let ready: Promise<unknown> = Promise.resolve()
 export let currentVisual = ''
 
+// Every visual made this session, for back/forward and Save.
+// shortcut: kept in memory only, so the gallery empties when STEVE quits; store them on disk if people want them back.
+const visuals: { title: string; html: string }[] = []
+let shown = -1
+
 export async function showVisual(title: string, html: string) {
+  visuals.push({ title, html })
+  if (visuals.length > 50) visuals.shift()
+  await present(visuals.length - 1)
+}
+
+async function present(i: number) {
   if (!board || board.isDestroyed()) {
     board = new BrowserWindow({ width: 980, height: 700, show: false, title: 'STEVE', backgroundColor: '#0f1115', webPreferences: { preload: PRELOAD } })
     // Visuals may only ever show their own srcdoc, never navigate to a website.
@@ -49,10 +60,39 @@ export async function showVisual(title: string, html: string) {
     ready = loadPage(board, 'board')
   }
   await ready
+  const { title, html } = visuals[i]
+  shown = i
   currentVisual = title
-  board.setTitle(`STEVE · ${title}`)
-  board.webContents.send('visual', { title, doc: wrapVisual(html) })
+  board.setTitle(title)
+  board.webContents.send('visual', { title, doc: wrapVisual(html), index: i, titles: visuals.map((v) => v.title) })
   board.show()
+}
+
+export const goVisual = (i: number) => { if (Number.isInteger(i) && visuals[i]) void present(i) }
+
+/** Asks where to save the visual on screen and writes a copy that opens in any browser. */
+export async function saveVisual(): Promise<string | null> {
+  const v = visuals[shown]
+  if (!v || !board) return null
+  const name = v.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Visual'
+  const { canceled, filePath } = await dialog.showSaveDialog(board, {
+    defaultPath: join(app.getPath('documents'), `${name}.html`),
+    filters: [{ name: 'Web page', extensions: ['html'] }],
+  })
+  if (canceled || !filePath) return null
+  await writeFile(filePath, wrapVisual(v.html, await cdnLinks()))
+  return filePath
+}
+
+/** The bundled libraries' exact versions on jsDelivr, so a saved visual looks the same in a browser. */
+async function cdnLinks() {
+  const version = async (pkg: string) => JSON.parse(await readFile(join(app.getAppPath(), 'node_modules', pkg, 'package.json'), 'utf8')).version
+  const cdn: Record<string, string> = {}
+  for (const [lib, path] of Object.entries(LIBS)) {
+    const [pkg, ...rest] = path.split('/')
+    cdn[lib] = `https://cdn.jsdelivr.net/npm/${pkg}@${await version(pkg)}/${rest.map((p) => p + '/').join('')}`
+  }
+  return cdn
 }
 
 const json = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c')

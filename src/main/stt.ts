@@ -6,8 +6,10 @@ export type Stt = { send(chunk: ArrayBuffer): void; finish(): Promise<string>; c
  * Deepgram live transcription. Audio is webm/opus from MediaRecorder, which Deepgram
  * detects from the container, so no encoding parameters are sent.
  */
-export function openStt(key: string, onText: (soFar: string) => void): Stt {
-  const ws = new WebSocket('wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&interim_results=true', {
+export function openStt(key: string, onText: (soFar: string) => void, onSpeechEnd?: () => void): Stt {
+  // Hands-free listening ends on a pause, so Deepgram waits for 900 ms of silence before calling the speech finished.
+  const url = 'wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&interim_results=true' + (onSpeechEnd ? '&endpointing=900' : '')
+  const ws = new WebSocket(url, {
     headers: { Authorization: `Token ${key}` },
   } as unknown as string[]) // Node's WebSocket accepts headers; the DOM typings do not know that.
   const pending: (string | ArrayBuffer)[] = []
@@ -25,6 +27,7 @@ export function openStt(key: string, onText: (soFar: string) => void): Stt {
     const t: string = m.channel?.alternatives?.[0]?.transcript ?? ''
     if (m.is_final) { if (t) finals.push(t); interim = '' } else interim = t
     onText([...finals, interim].join(' ').trim())
+    if (m.speech_final && finals.length) onSpeechEnd?.()
   })
 
   const send = (m: string | ArrayBuffer) => {

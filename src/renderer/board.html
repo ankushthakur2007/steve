@@ -2,20 +2,44 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <!-- No CSP here: the srcdoc frame would inherit it. The visual brings its own (see src/main/visual.ts). -->
     <title>STEVE</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #0f1115; color: #e6e8ee; font: 14px system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 var(--font-ui); }
       body { display: flex; flex-direction: column; }
-      header { padding: 8px 14px; border-bottom: 1px solid #222836; display: flex; gap: 10px; align-items: baseline; }
-      header b { font-size: 15px; }
-      header span { opacity: .6; font-size: 12px; }
+      button, select { font: inherit; color: inherit; }
+      header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+      .nav { display: flex; }
+      .nav button { width: 30px; height: 30px; border: 1px solid var(--line); background: var(--surface); display: grid; place-items: center; cursor: pointer; }
+      .nav button:first-child { border-radius: 8px 0 0 8px; } .nav button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+      .nav button:disabled { opacity: .35; cursor: default; }
+      .nav svg { width: 16px; height: 16px; }
+      .title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+      #title { font: 650 17px/1.2 var(--font-steve); font-variation-settings: 'CASL' 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .hint { color: var(--dim); font-size: 12.5px; white-space: nowrap; }
+      #history { max-width: 240px; height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 0 8px; }
+      #save { height: 30px; padding: 0 14px; border: 1.5px solid var(--ink); border-radius: 999px; background: var(--steve); color: var(--ink); font-weight: 650; cursor: pointer; }
+      #save:hover { background: var(--steve-deep); }
+      #saved { color: var(--dim); font-size: 12.5px; }
+      /* Visuals are drawn on a dark stage whatever the theme, so the generated pages always look as designed. */
       iframe { flex: 1; border: 0; width: 100%; background: #0f1115; }
+      @media (max-width: 640px) { .hint { display: none; } }
     </style>
   </head>
   <body>
-    <header><b id="title">Board</b><span>Click parts of the visual to ask STEVE about them.</span></header>
+    <header>
+      <div class="nav">
+        <button id="back" title="Previous visual" aria-label="Previous visual" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg></button>
+        <button id="forward" title="Next visual" aria-label="Next visual" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7" /></svg></button>
+      </div>
+      <div class="title"><span id="title">Visuals</span><span class="hint">Click any part to ask about it</span></div>
+      <select id="history" aria-label="All visuals"></select>
+      <span id="saved" aria-live="polite"></span>
+      <button id="save" title="Save this visual as a web page you can open in any browser">Save</button>
+    </header>
     <!-- No allow-same-origin: the visual gets an opaque origin and cannot reach this page or Node. -->
-    <iframe id="frame" sandbox="allow-scripts"></iframe>
+    <iframe id="frame" sandbox="allow-scripts" title="Visual"></iframe>
     <script type="module" src="./board.ts"></script>
   </body>
 </html>

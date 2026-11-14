@@ -1,3 +1,5 @@
+declare module '*.css' // stylesheets are bundled by Vite
+
 interface Window {
   steve: {
     send(channel: string, ...args: unknown[]): void

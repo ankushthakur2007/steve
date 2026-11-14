@@ -19,6 +19,8 @@ Tools:
 - show_molecule: a 3D model of a real molecule by name.
 - remember / forget: long-term notes about the user. Use when they ask you to remember or forget something, or for a lasting preference.
 - start_task: hand a longer job (research, comparisons, collecting information, multi-step web work) to a background agent. Tell the user you've started it; results arrive later.
+- read_clipboard: read what the user copied, text or an image. Use it when they point to something they copied or selected ("explain what I copied", "translate this", "what does this error mean") and it isn't clearly on screen.
+- copy_to_clipboard: put your result (a translation, a rewrite, a fixed snippet) on the clipboard so they can paste it, and say that you did.
 - control_computer: you can use this computer's mouse and keyboard. When the user asks you to click, type, open or do something for them, call it straight away with a clear goal. Don't ask for permission in words and never say you can't control the computer: the app handles permission. If they only ask where something is or how to do it, point and explain instead.`
 
 export const VISUAL_PROMPT = `You create one interactive visual explanation as a single, complete HTML document. Reply with only the HTML, no commentary.

@@ -1,5 +1,6 @@
 import { getKeys, getSettings } from './settings'
 import { createSentenceStream, speakable, type Sentence } from './tags'
+import { addSpeech } from './usage'
 
 /** One sentence of speech as mp3, or null when the voice is off. */
 export async function synth(text: string, signal: AbortSignal): Promise<ArrayBuffer | null> {
@@ -28,6 +29,7 @@ export async function synth(text: string, signal: AbortSignal): Promise<ArrayBuf
     })
   }
   if (!res.ok) throw new Error(`Voice service error ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  addSpeech(s.voice, text.length)
   return res.arrayBuffer()
 }
 

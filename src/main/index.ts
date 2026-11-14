@@ -1,12 +1,12 @@
 // STEVE main process: wires push-to-talk -> screenshot + speech-to-text -> model -> speech + pointing.
 import { generateText, tool, type ToolSet } from 'ai'
 import {
-  app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, session, shell,
-  systemPreferences, Tray,
+  app, BrowserWindow, clipboard, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen,
+  session, shell, systemPreferences, Tray,
 } from 'electron'
 import { z } from 'zod'
 import { answerTask, initTasks, listTasks, startTask, stopTask } from './agents'
-import { currentVisual, moleculeHtml, registerLibProtocol, showVisual } from './board'
+import { currentVisual, goVisual, moleculeHtml, registerLibProtocol, saveVisual, showVisual } from './board'
 import { extractHtml } from './visual'
 import { chat, missingKey, model, note, seedHistory } from './brain'
 import { capture, type Shot } from './capture'
@@ -18,6 +18,7 @@ import { VISUAL_PROMPT } from './prompts'
 import { getKeys, getSettings, loadKeys, saveSettings, setKeys, type KeyName } from './settings'
 import { openStt, type Stt } from './stt'
 import { createSpeaker } from './tts'
+import { addListening, addTokens, onUsageChange, overLimit, usageSummary } from './usage'
 import { errorText, loadPage, PRELOAD } from './windows'
 
 type State = 'idle' | 'listening' | 'thinking' | 'speaking' | 'working' | 'pointing'
@@ -33,7 +34,7 @@ function setState(s: State) {
   panel?.webContents.send('state', s)
 }
 const caption = (text: string | null) => toOverlays('caption', text)
-const transcript = (role: 'user' | 'assistant' | 'system', text: string, append = false) =>
+const transcript = (role: 'user' | 'assistant' | 'system' | 'note', text: string, append = false) =>
   panel?.webContents.send('transcript', { role, text, append })
 
 function report(e: unknown) {
@@ -79,7 +80,8 @@ function chatTools(signal: AbortSignal): ToolSet {
       }),
       execute: async ({ title, brief }, { abortSignal }) => {
         setState('working')
-        const { text } = await generateText({ model: model('visual'), system: VISUAL_PROMPT, prompt: brief, abortSignal })
+        const { text, totalUsage } = await generateText({ model: model('visual'), system: VISUAL_PROMPT, prompt: brief, abortSignal })
+        addTokens(getSettings().models.visual, totalUsage)
         await showVisual(title, extractHtml(text))
         return `The visual "${title}" is open on the board.`
       },
@@ -117,8 +119,38 @@ function chatTools(signal: AbortSignal): ToolSet {
         return `Task ${t.id} started. Progress is in the Tasks tab.`
       },
     }),
+    read_clipboard: tool({
+      description: 'Read what the user copied (text or an image). Use it when they refer to something they copied or selected, like "explain what I copied" or "translate this".',
+      inputSchema: z.object({}),
+      execute: async () => {
+        transcript('note', 'Read your clipboard.') // the user always sees when STEVE looked
+        const text = (await clipboard.readText()).slice(0, 12000)
+        if (text.trim()) return { kind: 'text', text }
+        const item = (await clipboard.read()).find((i) => i.types.includes('image/png'))
+        if (!item) return { kind: 'empty' }
+        const img = nativeImage.createFromBuffer(Buffer.from(await (await item.getType('image/png')).arrayBuffer()))
+        if (img.isEmpty()) return { kind: 'empty' }
+        const jpeg = (img.getSize().width > 1600 ? img.resize({ width: 1600 }) : img).toJPEG(80)
+        return { kind: 'image', data: jpeg.toString('base64') }
+      },
+      toModelOutput: ({ output }: { output: any }) => output.kind === 'image'
+        ? { type: 'content' as const, value: [
+            { type: 'text' as const, text: 'The clipboard holds this image:' },
+            { type: 'file' as const, data: { type: 'data' as const, data: output.data }, mediaType: 'image/jpeg' },
+          ] }
+        : { type: 'text' as const, value: output.kind === 'text' ? `Clipboard text:\n${output.text}` : 'The clipboard is empty.' },
+    }),
+    copy_to_clipboard: tool({
+      description: 'Put text on the clipboard so the user can paste it, such as a translation or a rewrite. Tell them you copied it.',
+      inputSchema: z.object({ text: z.string() }),
+      execute: async ({ text }) => {
+        await clipboard.writeText(text)
+        transcript('note', 'Copied to your clipboard.')
+        return 'Copied.'
+      },
+    }),
     control_computer: tool({
-      description: 'Take over the mouse and keyboard to do something on this computer. Only when the user explicitly asks you to do it.',
+      description: 'Use the mouse and keyboard to do something on this computer for the user.',
       inputSchema: z.object({ goal: z.string() }),
       execute: async ({ goal }) => {
         setState('working')
@@ -131,10 +163,13 @@ function chatTools(signal: AbortSignal): ToolSet {
   }
 }
 
-async function runTurn(text: string, shot: Shot | null, keyUpAt = Date.now()) {
+/** One question and its answer. A spoken question (`voice`) is followed by a few seconds of hands-free listening. */
+async function runTurn(text: string, shot: Shot | null, { keyUpAt = Date.now(), voice = false } = {}) {
   interrupt()
-  const blocked = missingKey('chat')
-  if (blocked) { report(blocked); showPanel('settings'); setState('idle'); return }
+  pttCancel() // a typed question ends any hands-free listening
+  const blocked = missingKey('chat') ?? overLimit()
+  if (blocked) { report(blocked); setState('idle'); if (!overLimit()) showPanel('settings'); return }
+  let completed = false
   const abort = new AbortController()
   turn = abort
   toOverlays('draw', [{ kind: 'clear' }])
@@ -155,6 +190,7 @@ async function runTurn(text: string, shot: Shot | null, keyUpAt = Date.now()) {
   try {
     for await (const chunk of chat(text, shot, chatTools(abort.signal), abort.signal)) speaker.push(chunk)
     await speaker.end()
+    completed = !abort.signal.aborted
   } catch (e) {
     if (!abort.signal.aborted) report(e)
   } finally {
@@ -164,39 +200,75 @@ async function runTurn(text: string, shot: Shot | null, keyUpAt = Date.now()) {
       setTimeout(() => { if (!turn && !listening) caption(null) }, 4000)
     }
   }
+  if (completed && voice && !turn && !listening && getSettings().followUps) listen(true)
 }
 
-// ---------- Push-to-talk ----------
-type Listening = { id: number; shot: Promise<Shot | null>; stt: Stt; at: number }
+// ---------- Listening: push-to-talk, and hands-free follow-ups ----------
+const FOLLOW_UP_MS = 6000 // how long STEVE waits for a reply without the keys
+type Listening = {
+  id: number; stt: Stt; handsFree: boolean
+  shot: Promise<Shot | null> | null // hands-free looks at the screen only once you start talking
+  started: number; at: number; timer?: ReturnType<typeof setTimeout>
+}
 let listening: Listening | null = null
 let micId = 0
+
+function listen(handsFree: boolean) {
+  const key = getKeys().deepgram
+  if (!key) {
+    if (!handsFree) { report('Add a Deepgram key in settings to talk to STEVE, or type in the panel.'); showPanel('settings') }
+    return
+  }
+  const limit = overLimit()
+  if (limit) { if (!handsFree) report(limit); return }
+  setState('listening')
+  caption(null)
+  const look = () => { toOverlays('flash'); return capture().catch((e) => { report(e); return null }) } // flash: "screen captured"
+  const id = ++micId
+  const l: Listening = {
+    id, handsFree, started: Date.now(), at: Date.now(), shot: handsFree ? null : look(),
+    stt: openStt(key, (t) => {
+      if (micId !== id) return // a newer question has started
+      caption(t || (handsFree ? null : '…'))
+      if (t && !l.shot) {
+        l.shot = look()
+        clearTimeout(l.timer)
+        l.timer = setTimeout(() => endListening(id), 30000) // nobody talks for this long in one go
+      }
+    }, handsFree ? () => endListening(id) : undefined),
+  }
+  // Nothing said in time: stop listening quietly.
+  if (handsFree) l.timer = setTimeout(() => { if (listening === l && !l.shot) pttCancel() }, FOLLOW_UP_MS)
+  listening = l
+  audio.webContents.send('mic-start', id)
+}
+
+/** Stops recording and lets the transcript finish (key-up, or the end of a hands-free reply). */
+function endListening(id?: number) {
+  const l = listening
+  if (!l || (id !== undefined && l.id !== id)) return
+  clearTimeout(l.timer)
+  setState('thinking')
+  l.at = Date.now() // the start of the latency budget
+  audio.webContents.send('mic-stop', l.id)
+}
 
 function pttDown() {
   interrupt()
   stopControl()
   pttCancel() // a new question replaces one still being recorded or transcribed
-  const key = getKeys().deepgram
-  if (!key) { report('Add a Deepgram key in settings to talk to STEVE, or type in the panel.'); showPanel('settings'); return }
-  setState('listening')
-  caption(null)
-  toOverlays('flash') // visible "screen captured" indicator
-  const shot = capture().catch((e) => { report(e); return null })
-  const id = ++micId
-  listening = { id, shot, at: Date.now(), stt: openStt(key, (t) => caption(t || '…')) }
-  audio.webContents.send('mic-start', id)
+  listen(false)
 }
 
-function pttUp() {
-  if (!listening) return
-  setState('thinking')
-  listening.at = Date.now() // key-up: start of the latency budget
-  audio.webContents.send('mic-stop', listening.id)
-}
+const pttUp = () => endListening()
 
 function pttCancel() {
-  if (!listening) return
-  audio.webContents.send('mic-stop', listening.id)
-  listening.stt.cancel()
+  const l = listening
+  if (!l) return
+  clearTimeout(l.timer)
+  audio.webContents.send('mic-stop', l.id)
+  l.stt.cancel()
+  addListening((Date.now() - l.started) / 1000)
   listening = null
   setState('idle')
   caption(null)
@@ -206,11 +278,12 @@ async function micDone(id: number) {
   const l = listening
   if (!l || l.id !== id) return
   listening = null
+  addListening((Date.now() - l.started) / 1000)
   try {
     const text = await l.stt.finish()
     if (listening) return // the user already started a new question
-    if (!text) { caption("I didn't catch that."); setState('idle'); return }
-    await runTurn(text, await l.shot, l.at)
+    if (!text) { if (!l.handsFree) caption("I didn't catch that."); setState('idle'); return }
+    await runTurn(text, await l.shot, { keyUpAt: l.at, voice: true })
   } catch (e) {
     report(e)
     setState('idle')
@@ -221,8 +294,12 @@ async function micDone(id: number) {
 function createPanel() {
   const area = screen.getPrimaryDisplay().workArea
   panel = new BrowserWindow({
-    width: 440, height: 660, x: area.x + area.width - 460, y: area.y + area.height - 680,
-    show: false, title: 'STEVE', backgroundColor: '#0f1115', webPreferences: { preload: PRELOAD },
+    width: 420, height: 660, minWidth: 340, minHeight: 420, x: area.x + area.width - 440, y: area.y + area.height - 680,
+    show: false, title: 'STEVE', webPreferences: { preload: PRELOAD },
+    // Frosted glass on macOS; elsewhere the page's own light or dark background.
+    ...(process.platform === 'darwin'
+      ? { vibrancy: 'under-window' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
+      : { backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1a22' : '#f5f5f8' }),
   })
   panel.setContentProtection(true)
   panel.on('close', (e) => { if (!quitting) { e.preventDefault(); panel.hide() } })
@@ -235,17 +312,23 @@ function createAudio() {
 }
 
 function trayIcon() {
-  // A small filled circle drawn in code, so no image asset is needed.
-  const size = 32
+  // STEVE's face drawn in code, so no image asset is needed: a black template on macOS (the menu bar
+  // tints it), yellow with dark eyes elsewhere. Pixels are BGRA.
+  const size = 32, mac = process.platform === 'darwin'
   const px = Buffer.alloc(size * size * 4)
+  const cover = (d: number) => Math.max(0, Math.min(1, 0.5 - d)) // signed distance -> antialiased coverage
+  const eye = (x: number, y: number, cx: number) => cover((Math.hypot((x - cx) / 2.3, (y - 13.5) / 3.1) - 1) * 2.6)
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const d = Math.hypot(x - 15.5, y - 15.5)
+    const fx = x + 0.5, fy = y + 0.5
+    const body = cover(Math.hypot(fx - 16, (fy - 16.5) * 1.06) - 13.5)
+    const eyes = Math.max(eye(fx, fy, 11.6), eye(fx, fy, 20.4))
     const i = (y * size + x) * 4
-    px.fill(160, i, i + 3)
-    px[i + 3] = d < 12 ? 255 : d < 13 ? 128 : 0
+    if (mac) { px[i + 3] = Math.round(255 * body * (1 - eyes)); continue }
+    const [b, g, r] = eyes > 0.5 ? [0x2e, 0x1f, 0x22] : [0x3f, 0xd2, 0xff]
+    px[i] = b; px[i + 1] = g; px[i + 2] = r; px[i + 3] = Math.round(255 * body)
   }
   const img = nativeImage.createFromBitmap(px, { width: size, height: size, scaleFactor: 2 })
-  img.setTemplateImage(true)
+  img.setTemplateImage(mac)
   return img
 }
 
@@ -285,6 +368,10 @@ function registerIpc() {
   })
   ipcMain.handle('memory:open', () => shell.openPath(memory.ensureDir()))
   ipcMain.handle('memory:wipe', () => memory.wipe())
+  ipcMain.handle('usage:get', () => usageSummary())
+  ipcMain.on('board:go', (_e, i: number) => goVisual(i))
+  ipcMain.handle('board:save', () => saveVisual())
+  ipcMain.on('open-link', (_e, url: string) => { if (/^https:\/\//.test(String(url))) void shell.openExternal(url) })
   ipcMain.handle('tasks:list', () => listTasks())
   ipcMain.on('tasks:stop', (_e, id: string) => stopTask(id))
   ipcMain.on('tasks:answer', (_e, id: string, text: string) => answerTask(id, text))
@@ -339,7 +426,13 @@ app.whenReady().then(async () => {
   ]))
   tray.on('click', () => showPanel('chat'))
 
-  startHotkeys({ down: pttDown, up: pttUp, cancel: pttCancel, escape: () => { if (controlling()) stopControl(); else if (turn) { interrupt(); setState('idle') } }, error: report })
+  const escape = () => {
+    if (controlling()) stopControl()
+    else if (turn) { interrupt(); setState('idle') }
+    else if (listening?.handsFree) pttCancel()
+  }
+  startHotkeys({ down: pttDown, up: pttUp, cancel: pttCancel, escape, error: report })
+  onUsageChange(() => panel.webContents.send('usage', usageSummary()))
   globalShortcut.register('CommandOrControl+Shift+Space', () => showPanel('chat'))
 
   initTasks({

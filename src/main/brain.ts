@@ -6,6 +6,7 @@ import type { Shot } from './capture'
 import * as memory from './memory'
 import { CHAT_PROMPT } from './prompts'
 import { getKeys, getSettings, type KeyName } from './settings'
+import { addTokens } from './usage'
 
 export type Role = 'chat' | 'visual' | 'agent'
 
@@ -85,7 +86,10 @@ export async function* chat(text: string, shot: Shot | null, tools: ToolSet, sig
       else if (part.type === 'error') throw part.error
     }
     if (signal.aborted) history.push({ role: 'assistant', content: reply + ' [interrupted]' })
-    else history.push(...(await result.response).messages)
+    else {
+      history.push(...(await result.response).messages)
+      addTokens(s.models.chat, await result.totalUsage) // shortcut: interrupted replies aren't metered (the SDK reports no usage)
+    }
   } catch (e) {
     history.push({ role: 'assistant', content: reply + ' [interrupted]' })
     throw e

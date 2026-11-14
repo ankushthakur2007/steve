@@ -1,0 +1,50 @@
+/* STEVE's design tokens, shared by every window. Light and dark follow the system. */
+@import '@fontsource-variable/recursive/casl.css';
+
+:root {
+  color-scheme: light dark;
+  --steve: #ffd23f;      /* STEVE's body and its marker ink */
+  --steve-deep: #f2b705;
+  --ink: #221f2e;        /* outlines, and text on yellow */
+  --rec: #ff5a5f;        /* listening, and "STEVE is in control" */
+  --ok: #1f9d68;
+  --warn: #d98a00;
+
+  --bg: #f5f5f8;
+  --surface: #ffffff;
+  --sunken: #ececf1;
+  --line: #e0dfe7;
+  --text: #221f2e;
+  --dim: #686676;
+  --user: #e9e7f5;
+
+  --font-ui: system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+  --font-steve: 'Recursive Variable', var(--font-ui);
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1a22;
+    --surface: #25242e;
+    --sunken: #15141b;
+    --line: #363441;
+    --text: #f2f1f6;
+    --dim: #a5a3b3;
+    --user: #35324a;
+    --warn: #f5b335;
+  }
+}
+
+/* Anything STEVE itself says is set in its casual marker hand. */
+.voice { font-family: var(--font-steve); font-variation-settings: 'CASL' 1; }
+
+/* The character, used in the panel header, the empty chat and the board. Same drawing as the overlay. */
+.mini { display: inline-block; flex: none; }
+.mini .body { fill: var(--steve); stroke: var(--ink); stroke-width: 2.4; }
+.mini .white { fill: #fff; stroke: var(--ink); stroke-width: 1.4; }
+.mini .pupil { fill: var(--ink); }
+.mini .mouth { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linecap: round; }
+.mini .cheek { fill: #ff8a8a; opacity: .45; }
+
+:focus-visible { outline: 2px solid var(--steve-deep); outline-offset: 2px; }
