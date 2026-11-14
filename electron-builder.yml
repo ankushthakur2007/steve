@@ -1,0 +1,25 @@
+appId: app.steve.companion
+productName: STEVE
+directories:
+  output: dist
+files:
+  - out/**
+  - package.json
+# uiohook-napi and nut-js ship prebuilt N-API binaries that work with any Electron version,
+# so skip recompiling them (which would need a C++ toolchain on the build machine).
+npmRebuild: false
+# Native addons must live outside the asar archive.
+# Playwright is unpacked because the browser agent runs it as a separate process.
+asarUnpack:
+  - '**/*.node'
+  - node_modules/@playwright/**
+  - node_modules/playwright/**
+  - node_modules/playwright-core/**
+mac:
+  target: dmg
+  category: public.app-category.productivity
+  extendInfo:
+    LSUIElement: true
+    NSMicrophoneUsageDescription: STEVE listens only while you hold the talk keys.
+win:
+  target: nsis

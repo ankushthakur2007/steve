@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>STEVE</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0f1115; color: #e6e8ee; font: 14px system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; }
+      header { padding: 8px 14px; border-bottom: 1px solid #222836; display: flex; gap: 10px; align-items: baseline; }
+      header b { font-size: 15px; }
+      header span { opacity: .6; font-size: 12px; }
+      iframe { flex: 1; border: 0; width: 100%; background: #0f1115; }
+    </style>
+  </head>
+  <body>
+    <header><b id="title">Board</b><span>Click parts of the visual to ask STEVE about them.</span></header>
+    <!-- No allow-same-origin: the visual gets an opaque origin and cannot reach this page or Node. -->
+    <iframe id="frame" sandbox="allow-scripts"></iframe>
+    <script type="module" src="./board.ts"></script>
+  </body>
+</html>

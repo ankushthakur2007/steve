@@ -1,0 +1,44 @@
+{
+  "name": "steve",
+  "productName": "STEVE",
+  "version": "0.1.0",
+  "description": "AI desktop companion: sees your screen, talks, points, shows and does.",
+  "main": "./out/main/index.js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "eval:pointing": "node --experimental-strip-types eval/pointing/run.ts",
+    "e2e": "node --experimental-strip-types e2e/smoke.ts",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:mac": "electron-vite build && electron-builder --mac"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.104",
+    "@ai-sdk/google": "^4.0.120",
+    "@ai-sdk/mcp": "^2.0.99",
+    "@ai-sdk/openai": "^4.0.117",
+    "@nut-tree-fork/nut-js": "^4.2.6",
+    "@playwright/mcp": "^0.0.85",
+    "ai": "^7.0.172",
+    "chart.js": "^4.6.1",
+    "katex": "^0.19.1",
+    "mermaid": "^12.3.0",
+    "three": "^0.187.0",
+    "uiohook-napi": "^1.5.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "playwright-core": "1.66.0-alpha-2026-11-09",
+    "typescript": "^7.0.2",
+    "vite": "*",
+    "vitest": "^5.1.0"
+  }
+}

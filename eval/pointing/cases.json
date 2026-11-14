@@ -1,0 +1,146 @@
+[
+  {
+    "image": "web-wikipedia.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where do I search Wikipedia?",
+    "box": [
+      320,
+      11,
+      270,
+      21
+    ]
+  },
+  {
+    "image": "web-wikipedia.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where is the Talk page for this article?",
+    "box": [
+      357,
+      168,
+      17,
+      13
+    ]
+  },
+  {
+    "image": "web-wikipedia.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where can I switch this article to another language?",
+    "box": [
+      873,
+      144,
+      67,
+      13
+    ]
+  },
+  {
+    "image": "web-hackernews.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where do I log in?",
+    "box": [
+      1145,
+      7,
+      21,
+      12
+    ]
+  },
+  {
+    "image": "web-hackernews.png",
+    "width": 1280,
+    "height": 720,
+    "question": "How do I submit a story?",
+    "box": [
+      369,
+      7,
+      29,
+      12
+    ]
+  },
+  {
+    "image": "web-github.png",
+    "width": 1280,
+    "height": 720,
+    "question": "How do I star this repository?",
+    "box": [
+      993,
+      128,
+      41,
+      13
+    ]
+  },
+  {
+    "image": "web-github.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where do I get the clone URL for this repo?",
+    "box": [
+      785,
+      178,
+      23,
+      14
+    ]
+  },
+  {
+    "image": "web-github.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where are the issues?",
+    "box": [
+      87,
+      89,
+      29,
+      14
+    ]
+  },
+  {
+    "image": "web-npm.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where can I see how many weekly downloads this has?",
+    "box": [
+      776,
+      494,
+      238,
+      52
+    ]
+  },
+  {
+    "image": "web-npm.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where is the link to the source repository?",
+    "box": [
+      794,
+      378,
+      148,
+      15
+    ]
+  },
+  {
+    "image": "web-python-docs.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where is the search box?",
+    "box": [
+      1042,
+      14,
+      106,
+      13
+    ]
+  },
+  {
+    "image": "web-python-docs.png",
+    "width": 1280,
+    "height": 720,
+    "question": "Where is the tutorial?",
+    "box": [
+      284,
+      194,
+      48,
+      17
+    ]
+  }
+]

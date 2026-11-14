@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>STEVE</title>
+    <style>
+      :root { --bg: #0f1115; --card: #171a22; --line: #262b38; --text: #e6e8ee; --dim: #9aa3b5; --accent: #5b7cff; --warn: #ffb020; --bad: #ff5d73; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+      body { display: flex; flex-direction: column; }
+      nav { display: flex; border-bottom: 1px solid var(--line); }
+      nav button { flex: 1; background: none; border: 0; color: var(--dim); padding: 10px; font: inherit; cursor: pointer; border-bottom: 2px solid transparent; }
+      nav button.on { color: var(--text); border-bottom-color: var(--accent); }
+      main { flex: 1; overflow: auto; padding: 12px; }
+      section[hidden] { display: none; }
+      #state { font-size: 12px; color: var(--dim); padding: 6px 12px 0; }
+      .msg { margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: var(--card); white-space: pre-wrap; }
+      .msg.user { background: #22305a; margin-left: 40px; }
+      .msg.system { color: var(--warn); background: none; padding: 2px 0; font-size: 13px; }
+      footer { border-top: 1px solid var(--line); padding: 10px; display: grid; gap: 8px; }
+      footer .row { display: flex; gap: 8px; align-items: center; }
+      input, textarea, select { width: 100%; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font: inherit; }
+      textarea { min-height: 90px; font-family: ui-monospace, monospace; font-size: 12px; }
+      input[type=checkbox] { width: auto; }
+      button.btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer; white-space: nowrap; }
+      button.ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+      button.danger { background: var(--bad); }
+      label { display: grid; gap: 4px; margin: 10px 0; color: var(--dim); font-size: 13px; }
+      label.check { display: flex; align-items: center; gap: 8px; color: var(--text); }
+      h3 { margin: 18px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); }
+      .hint { color: var(--dim); font-size: 12px; }
+      .task { background: var(--card); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+      .task .status { font-size: 12px; font-weight: 600; }
+      .task pre { white-space: pre-wrap; font: 12px/1.4 ui-monospace, monospace; color: var(--dim); max-height: 200px; overflow: auto; }
+      .perm { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; }
+      .ok { color: #3ecf8e; } .no { color: var(--warn); }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <button data-tab="chat" class="on">Chat</button><button data-tab="tasks">Tasks</button><button data-tab="settings">Settings</button>
+    </nav>
+    <div id="state">Hold Ctrl + Alt (Control + Option on Mac) and speak.</div>
+    <main>
+      <section id="tab-chat"><div id="log"></div></section>
+
+      <section id="tab-tasks" hidden>
+        <p class="hint">Background tasks STEVE is working on. Ask STEVE to research or do something bigger and it shows up here.</p>
+        <div id="tasks"></div>
+      </section>
+
+      <section id="tab-setup" hidden>
+        <h2>Welcome to STEVE</h2>
+        <p>Hold <b>Ctrl + Alt</b> (<b>Control + Option</b> on Mac), ask a question, and let go. STEVE looks at your screen, answers out loud, and points at things. Press <b>Esc</b> to stop it.</p>
+        <p class="hint">Keys stay on this computer, encrypted by your operating system. STEVE only looks at your screen while you hold the talk keys or send a message with "include my screen" ticked.</p>
+        <label>OpenAI API key (the brain)<input data-key="openai" type="password" autocomplete="off" /></label>
+        <label>Deepgram API key (hearing and voice)<input data-key="deepgram" type="password" autocomplete="off" /></label>
+        <div id="perms"></div>
+        <label class="check"><input type="checkbox" data-setting="memory" /> Remember our conversations between sessions</label>
+        <button class="btn" id="finish">Start using STEVE</button>
+      </section>
+
+      <section id="tab-settings" hidden>
+        <h3>API keys</h3>
+        <p class="hint">Leave a field empty to keep the saved key. Type - to remove it.</p>
+        <label>OpenAI<input data-key="openai" type="password" autocomplete="off" /></label>
+        <label>Deepgram<input data-key="deepgram" type="password" autocomplete="off" /></label>
+        <label>ElevenLabs (optional premium voice)<input data-key="elevenlabs" type="password" autocomplete="off" /></label>
+        <label>Anthropic (optional)<input data-key="anthropic" type="password" autocomplete="off" /></label>
+        <label>Google (optional)<input data-key="google" type="password" autocomplete="off" /></label>
+
+        <h3>Models</h3>
+        <p class="hint">provider:model, e.g. openai:gpt-6-luna, anthropic:claude-sonnet-5-5, google:gemini-3.8-flash</p>
+        <label>Conversation and pointing<input data-setting="models.chat" /></label>
+        <label>Visuals (diagrams, 3D)<input data-setting="models.visual" /></label>
+        <label>Agents and computer control<input data-setting="models.agent" /></label>
+        <label>OpenAI-compatible server URL (optional, for local models)<input data-setting="openaiBaseURL" placeholder="http://localhost:11434/v1" /></label>
+
+        <h3>Voice</h3>
+        <label>Voice<select data-setting="voice"><option value="deepgram">Deepgram Aura (default)</option><option value="elevenlabs">ElevenLabs</option><option value="off">Off (text only)</option></select></label>
+        <label>Deepgram voice<input data-setting="deepgramVoice" /></label>
+        <label>ElevenLabs voice ID<input data-setting="elevenVoiceId" /></label>
+
+        <h3>Memory</h3>
+        <label class="check"><input type="checkbox" data-setting="memory" /> Remember conversations and facts between sessions</label>
+        <div class="row" style="display:flex;gap:8px"><button class="btn ghost" id="mem-open">Open memory folder</button><button class="btn danger" id="mem-wipe">Delete all memory</button></div>
+
+        <h3>Agents</h3>
+        <label class="check"><input type="checkbox" data-setting="browserAgent" /> Let agents use a browser window you can watch</label>
+        <label>Browser (chrome, msedge, chromium…)<input data-setting="browserChannel" /></label>
+        <label>Connected apps (MCP servers, JSON)<textarea data-setting="mcpServers" spellcheck="false" placeholder='{ "notes": { "command": "npx", "args": ["-y", "some-mcp-server"] } }'></textarea></label>
+
+        <h3 id="perm-title">Permissions</h3>
+        <div id="perms2"></div>
+        <p><button class="btn" id="save">Save settings</button> <span id="saved" class="hint"></span></p>
+      </section>
+    </main>
+    <footer id="composer">
+      <textarea id="input" rows="2" placeholder="Type to STEVE…  (Enter to send)" style="min-height:0;font-family:inherit;font-size:14px"></textarea>
+      <div class="row">
+        <label class="check" style="margin:0;flex:1"><input type="checkbox" id="with-screen" checked /> include my screen</label>
+        <button class="btn ghost" id="talk" title="Hold to talk">🎤 Hold</button>
+        <button class="btn ghost" id="stop">Stop</button>
+        <button class="btn" id="send">Send</button>
+      </div>
+    </footer>
+    <script type="module" src="./panel.ts"></script>
+  </body>
+</html>

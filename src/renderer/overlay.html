@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>STEVE overlay</title>
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; font: 14px/1.35 system-ui, sans-serif; }
+      #ink { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      #ink .shape { fill: none; stroke: #ffb020; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 3px #0008);
+        stroke-dasharray: 2000; stroke-dashoffset: 2000; animation: drawin .6s ease-out forwards; }
+      #ink text { fill: #111; font: 600 13px system-ui, sans-serif; }
+      #ink .tagbg { fill: #ffb020; stroke: none; }
+      #ink .ring { fill: none; stroke: #4f8cff; stroke-width: 3; animation: ring 1.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+      @keyframes drawin { to { stroke-dashoffset: 0 } }
+      @keyframes ring { from { transform: scale(.4); opacity: 1 } to { transform: scale(1.6); opacity: 0 } }
+
+      #buddy { position: fixed; left: 0; top: 0; transition: transform 90ms linear; will-change: transform; }
+      #buddy.flying { transition: transform 700ms cubic-bezier(.2,.8,.2,1); }
+      #buddy[hidden] { display: none; }
+      .body { position: absolute; left: -13px; top: -13px; width: 26px; height: 26px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #9cc0ff, #4f6dff 60%, #6a3cff); box-shadow: 0 2px 10px #0006; animation: bob 2.4s ease-in-out infinite; }
+      .body i { position: absolute; top: 9px; width: 4px; height: 6px; border-radius: 2px; background: #fff; }
+      .body i:first-child { left: 8px } .body i:last-child { right: 8px }
+      .body::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 2px solid transparent; }
+      [data-state="listening"] .body::after { border-color: #ff4d6d; animation: pulse 1s ease-in-out infinite; }
+      [data-state="thinking"] .body::after { border-color: #9cc0ff #9cc0ff00 #9cc0ff #9cc0ff00; animation: spin .9s linear infinite; }
+      [data-state="speaking"] .body, [data-state="pointing"] .body { animation: talk .35s ease-in-out infinite alternate; }
+      [data-state="working"] .body::after { border-color: #ffb020 transparent transparent transparent; animation: spin .6s linear infinite; }
+      @keyframes bob { 50% { transform: translateY(-3px) } }
+      @keyframes pulse { 50% { transform: scale(1.25); opacity: .5 } }
+      @keyframes spin { to { transform: rotate(360deg) } }
+      @keyframes talk { to { transform: scale(1.12, .92) } }
+
+      #caption { position: absolute; left: 22px; top: 14px; max-width: 320px; width: max-content; padding: 6px 10px; border-radius: 10px;
+        background: #12151cee; color: #f2f4f8; box-shadow: 0 4px 16px #0006; }
+      #buddy.flip #caption { left: auto; right: 22px; }
+      #caption:empty { display: none; }
+
+      #banner { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); padding: 8px 16px; border-radius: 999px;
+        background: #d7263d; color: #fff; font-weight: 600; box-shadow: 0 4px 20px #0007; }
+      #banner[hidden] { display: none; }
+      #flash { position: fixed; inset: 0; border: 4px solid #4f8cff; opacity: 0; pointer-events: none; }
+      #flash.on { animation: flash .5s ease-out; }
+      @keyframes flash { 20% { opacity: 1 } }
+    </style>
+  </head>
+  <body>
+    <svg id="ink" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#ffb020" /></marker></defs>
+      <g id="shapes"></g>
+    </svg>
+    <div id="buddy" data-state="idle" hidden><div class="body"><i></i><i></i></div><div id="caption"></div></div>
+    <div id="banner" hidden></div>
+    <div id="flash"></div>
+    <script type="module" src="./overlay.ts"></script>
+  </body>
+</html>
