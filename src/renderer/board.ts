@@ -16,6 +16,11 @@ function status(text: string | null, error = false) {
   $('status-text').textContent = text ?? ''
   if (error) console.warn(text)
 }
+/** Save works only once the visual is finished. */
+function canSave(yes: boolean) {
+  $<HTMLButtonElement>('save').disabled = !yes
+  $('save').title = yes ? 'Save this visual as a web page you can open in any browser' : 'You can save it when it has finished'
+}
 function freshBar() {
   // Show the toolbar for a moment so people see where to move, save or close the visual.
   document.body.classList.add('fresh')
@@ -25,6 +30,7 @@ function freshBar() {
 
 steve.on('making', (title: string) => {
   sceneId = ''
+  canSave(false)
   clearTimeout(readyTimer)
   $('title').textContent = title
   frame.hidden = true
@@ -55,6 +61,7 @@ const toPlayer = (msg: object) => { if (playerReady) frame.contentWindow?.postMe
 
 steve.on('scene-start', (v: { title: string; id: string; doc: string }) => {
   sceneId = v.id
+  canSave(false)
   playerReady = false
   pending = []
   clearTimeout(readyTimer)
@@ -68,10 +75,11 @@ steve.on('scene-start', (v: { title: string; id: string; doc: string }) => {
 })
 steve.on('scene-line', (v: { id: string; line: string }) => { if (v.id === sceneId) toPlayer({ type: 'scene-line', id: v.id, line: v.line }) })
 steve.on('scene-end', (v: { id: string }) => { if (v.id === sceneId) toPlayer({ type: 'scene-end', id: v.id }) })
-steve.on('visual-meta', (v: { index: number; titles: string[] }) => setHistory(v.index, v.titles))
+steve.on('visual-meta', (v: { index: number; titles: string[] }) => { setHistory(v.index, v.titles); canSave(true) })
 
 steve.on('visual', (v: { title: string; doc: string; clear: boolean; index: number; titles: string[] }) => {
   sceneId = ''
+  canSave(true)
   $('title').textContent = v.title
   // 3D visuals have no background of their own, so the model sits right on the user's screen.
   frame.classList.toggle('clear', v.clear)

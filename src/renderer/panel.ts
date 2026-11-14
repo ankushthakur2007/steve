@@ -57,6 +57,10 @@ function send() {
 $('#send').addEventListener('click', send)
 input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } })
 $$('[data-ask]').forEach((b) => b.addEventListener('click', () => ask(b.dataset.ask!)))
+$$('[data-demo]').forEach((b) => b.addEventListener('click', () => steve.send('demo', Number(b.dataset.demo))))
+// Until STEVE can answer (no key yet), the empty chat offers the key-free 3D demos instead of questions.
+const refreshCanChat = async () => document.body.classList.toggle('can-chat', (await steve.invoke<View>('settings:get')).canChat)
+void refreshCanChat()
 $('#stop').addEventListener('click', () => steve.send('stop'))
 
 const talk = $('#talk')
@@ -138,7 +142,7 @@ void steve.invoke<Usage>('usage:get').then(renderUsage)
 $('#today').addEventListener('click', () => { showTab('settings'); $('#usage-group').scrollIntoView() })
 
 // ---------- Settings ----------
-type View = { settings: Record<string, any>; keysSet: Record<string, boolean>; platform: string }
+type View = { settings: Record<string, any>; keysSet: Record<string, boolean>; platform: string; canChat: boolean }
 const getPath = (o: any, path: string) => path.split('.').reduce((v, k) => v?.[k], o)
 
 async function loadSettings() {
@@ -152,6 +156,8 @@ async function loadSettings() {
     el.value = ''
     el.placeholder = v.keysSet[el.dataset.key!] ? 'Saved' : 'Not set'
   }
+  // Until STEVE can answer, the empty chat offers the key-free 3D demos instead of questions.
+  document.body.classList.toggle('can-chat', v.canChat)
   await renderPerms()
 }
 
@@ -161,8 +167,13 @@ function collect(section: HTMLElement) {
   for (const el of $$<HTMLInputElement>('[data-setting]', section)) {
     const [a, b] = el.dataset.setting!.split('.')
     let val: unknown = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Math.max(0, Number(el.value) || 0) : el.value.trim()
+    if (a === 'models' && !/^(openai|anthropic|google):\S+$/.test(String(val))) {
+      throw new Error(`"${val}" isn't a model name. Write it as provider:model, e.g. openai:gpt-6-luna or anthropic:claude-sonnet-5-5.`)
+    }
     if (a === 'mcpServers') {
-      val = el.value.trim() ? JSON.parse(el.value) : {}
+      try { val = el.value.trim() ? JSON.parse(el.value) : {} } catch (e) {
+        throw new Error(`The tool servers setting isn't valid JSON: ${e instanceof Error ? e.message : e}`)
+      }
       for (const [name, s] of Object.entries(val as Record<string, any>)) {
         if (typeof s?.command !== 'string') throw new Error(`MCP server "${name}" needs a "command" string.`)
       }
@@ -189,7 +200,10 @@ $('#save').addEventListener('click', async () => {
   try { await save($('#tab-settings')); $('#saved').textContent = 'Saved.'; await loadSettings(); renderUsage(await steve.invoke<Usage>('usage:get')) }
   catch (e) { $('#saved').textContent = e instanceof Error ? e.message : String(e) }
 })
-$('#finish').addEventListener('click', async () => { await save($('#tab-setup'), { onboarded: true }); showTab('chat') })
+$('#finish').addEventListener('click', async () => {
+  try { await save($('#tab-setup'), { onboarded: true }); showTab('chat'); void refreshCanChat() }
+  catch (e) { $('#finish-error').textContent = e instanceof Error ? e.message : String(e) } // e.g. no secure password store
+})
 $('#mem-open').addEventListener('click', () => steve.invoke('memory:open'))
 $('#mem-wipe').addEventListener('click', async () => {
   if (confirm('Delete everything STEVE remembers? This cannot be undone.')) await steve.invoke('memory:wipe')

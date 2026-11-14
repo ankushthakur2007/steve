@@ -1,0 +1,13 @@
+{"view":[0.8,0.6,1.4]}
+{"part":"Housing","shape":"box","size":[4.2,2.6,0.4],"at":[0,0,-0.55],"mat":"aluminium","info":"Holds the shafts in line."}
+{"to":"Housing","shape":"bolt","r":0.07,"length":0.3,"axis":"z","at":[-1.85,1.05,-0.25],"array":{"count":4,"step":[1.23,0,0]}}
+{"to":"Housing","shape":"bolt","r":0.07,"length":0.3,"axis":"z","at":[-1.85,-1.05,-0.25],"array":{"count":4,"step":[1.23,0,0]}}
+{"part":"Drive gear","shape":"gear","axis":"z","at":[-0.95,0,0],"r":0.62,"teeth":16,"thickness":0.3,"mat":"steel","spin":1.5,"label":true,"tag":"blue","info":"Turned by the motor; small and fast."}
+{"part":"Driven gear","shape":"gear","axis":"z","at":[0.6,0,0],"r":0.98,"teeth":26,"thickness":0.3,"mat":"brass","spin":-0.92,"label":true,"tag":"orange","info":"Bigger, so it turns slower but with more force."}
+{"part":"Shafts","shape":"cylinder","axis":"z","at":[-0.95,0,0],"r":0.12,"h":1.4,"mat":"chrome","info":"Carry the turning force in and out."}
+{"to":"Shafts","shape":"cylinder","axis":"z","at":[0.6,0,0],"r":0.16,"h":1.4,"mat":"chrome"}
+{"part":"Return spring","shape":"spring","axis":"x","at":[2.2,-0.6,0],"r":0.16,"turns":7,"length":1,"wire":0.03,"mat":"steel","info":"Pulls the lever back."}
+{"arrow":[[-1.15,0.95,0.4],[-0.6,1.0,0.4],[-0.3,0.75,0.4]],"color":"blue","label":"Fast in"}
+{"arrow":[[1.1,-1.15,0.4],[0.55,-1.3,0.4],[0.1,-1.1,0.4]],"color":"orange","label":"Slow, strong out"}
+{"step":"A gear pair trades speed for force.","labels":["Drive gear","Driven gear"]}
+{"step":"16 teeth drive 26 teeth: the output turns 1.6 times slower.","focus":"Driven gear","highlight":["Drive gear","Driven gear"],"labels":["Fast in","Slow, strong out"]}

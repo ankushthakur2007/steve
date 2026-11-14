@@ -17,7 +17,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const RESPONSES = process.env.E2E_API === 'responses'
 type Msg = { role: string; content: any; tool_calls?: any[] }
 type Seen = { system: string; lastUser: string; last: Msg; messages: Msg[]; path: string }
-type Reply = { text?: string; tool?: { name: string; args: object }; status?: number }
+type Reply = { text?: string; tool?: { name: string; args: object }; status?: number; slow?: boolean } // slow: stream over a few seconds
 const seen: Seen[] = []
 let callId = 0
 
@@ -78,7 +78,7 @@ const SCENE = `Here is the pump:
 {"step":"The impeller flings water outward.","focus":"Impeller","highlight":["Impeller"]}`
 
 async function route(s: Seen): Promise<Reply> {
-  if (s.system.startsWith('You build one detailed 3D model')) return { text: SCENE }
+  if (s.system.startsWith('You build one detailed 3D model')) return { text: SCENE, slow: s.lastUser.includes('SLOW') }
   if (s.system.startsWith('You create one interactive 2D visual') && s.lastUser.includes('BROKEN')) return { text: BROKEN_HTML }
   if (s.system.startsWith('You create one interactive 2D visual') && s.lastUser.includes('FAIL')) return { status: 400 }
   if (s.system.startsWith('You create one interactive 2D visual')) return { text: '```html\n' + (s.lastUser.includes('3D') ? KIT_HTML : VISUAL_HTML) + '\n```' }
@@ -98,6 +98,7 @@ async function route(s: Seen): Promise<Reply> {
   if (u.includes('long story')) return { text: 'One. Two. Three. Four. Five. Six. Seven. Eight.' }
   if (u.includes('I clicked')) return { text: 'That bar is the first value.' } // before 'chart': the click mentions "Test chart"
   if (u.includes('chart')) return { tool: { name: 'show_visual', args: { title: 'Test chart', brief: 'A bar chart of A and B' } } }
+  if (u.includes('slow turbine')) return { tool: { name: 'show_3d', args: { title: 'Slow turbine', brief: 'A SLOW 3D turbine' } } }
   if (u.includes('pump')) return { tool: { name: 'show_3d', args: { title: 'Pump', brief: 'A centrifugal pump' } } }
   if (u.includes('broken model')) return { tool: { name: 'show_visual', args: { title: 'Broken model', brief: 'BROKEN 3D' } } }
   if (u.includes('failing visual')) return { tool: { name: 'show_visual', args: { title: 'Failing visual', brief: 'FAIL' } } }
@@ -124,7 +125,7 @@ function fromResponses(body: any): Msg[] {
   return msgs
 }
 
-function sendResponses(res: ServerResponse, stream: boolean, r: Reply) {
+async function sendResponses(res: ServerResponse, stream: boolean, r: Reply) {
   const id = ++callId
   const usage = { input_tokens: 10, output_tokens: 5 }
   const item = r.tool
@@ -144,14 +145,17 @@ function sendResponses(res: ServerResponse, stream: boolean, r: Reply) {
     ev({ type: 'response.output_item.done', output_index: 0, item })
   } else {
     ev({ type: 'response.output_item.added', output_index: 0, item: { type: 'message', id: item.id } })
-    for (const piece of r.text!.match(/[\s\S]{1,9}/g)!) ev({ type: 'response.output_text.delta', item_id: item.id, output_index: 0, delta: piece })
+    for (const piece of r.text!.match(/[\s\S]{1,9}/g)!) {
+      ev({ type: 'response.output_text.delta', item_id: item.id, output_index: 0, delta: piece })
+      if (r.slow) await sleep(250)
+    }
     ev({ type: 'response.output_item.done', output_index: 0, item: { type: 'message', id: item.id } })
   }
   ev({ type: 'response.completed', response: { usage } })
   res.end()
 }
 
-function send(res: ServerResponse, stream: boolean, r: Reply) {
+async function send(res: ServerResponse, stream: boolean, r: Reply) {
   const toolCall = r.tool && { id: `call_${++callId}`, type: 'function', function: { name: r.tool.name, arguments: JSON.stringify(r.tool.args) } }
   const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
   const finish = r.tool ? 'tool_calls' : 'stop'
@@ -165,7 +169,7 @@ function send(res: ServerResponse, stream: boolean, r: Reply) {
   const chunk = (delta: object, finish_reason: string | null = null, extra = {}) =>
     res.write(`data: ${JSON.stringify({ id: 'c', object: 'chat.completion.chunk', created: 0, model: 'mock', choices: [{ index: 0, delta, finish_reason }], ...extra })}\n\n`)
   if (toolCall) chunk({ role: 'assistant', tool_calls: [{ index: 0, ...toolCall }] })
-  else for (const piece of r.text!.match(/[\s\S]{1,9}/g)!) chunk({ content: piece }) // small pieces split tags across chunks
+  else for (const piece of r.text!.match(/[\s\S]{1,9}/g)!) { chunk({ content: piece }); if (r.slow) await sleep(250) } // small pieces split tags across chunks
   chunk({}, finish, { usage })
   res.end('data: [DONE]\n\n')
 }
@@ -188,7 +192,7 @@ const server = createServer(async (req, res) => {
   try {
     const r = await route(s)
     if (r.status) { res.writeHead(r.status, { 'content-type': 'application/json' }); res.end(JSON.stringify({ error: { message: 'Mock model error', type: 'invalid_request_error' } })); return }
-    ;(responses ? sendResponses : send)(res, !!body.stream, r)
+    await (responses ? sendResponses : send)(res, !!body.stream, r)
   } catch { /* client went away */ }
 })
 await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
@@ -214,7 +218,7 @@ const app = await electron.launch({
   ],
   cwd: join(import.meta.dirname, '..'),
   env: {
-    ...process.env, STEVE_PROFILE: profile, OPENAI_API_KEY: 'test-key',
+    ...process.env, STEVE_PROFILE: profile, OPENAI_API_KEY: 'test-key', ANTHROPIC_API_KEY: '', GOOGLE_GENERATIVE_AI_API_KEY: '',
     ...(RESPONSES ? { OPENAI_BASE_URL: `http://127.0.0.1:${port}/v1` } : {}),
   } as Record<string, string>,
 })
@@ -409,6 +413,59 @@ await check('3D scenes stream in: STEVE answers at once, parts are drawn from th
     if (!debugLog.includes(line)) throw new Error(`the debug log is missing: ${line}`)
   }
   await board.evaluate(() => document.getElementById('close')!.click())
+})
+
+await check('built-in 3D demos play without any model call', async () => {
+  await until('idle', idle)
+  const from = seen.length
+  await panel.evaluate(() => (document.querySelector('[data-demo="2"]') as HTMLButtonElement).click())
+  await until('demo on the board', async () => (await board.evaluate(() => document.getElementById('title')!.textContent)) === 'How gears trade speed for force')
+  await until('demo drawn with its tour', async () => (await visualFrame()).evaluate(() =>
+    (window as any).__stage?.ready && (window as any).__stage.parts.length === 5 && !!document.getElementById('steve-steps')), 30000)
+  if (seen.length !== from) throw new Error('the demo called the model')
+  await board.evaluate(() => document.getElementById('close')!.click())
+})
+
+const boardVisible = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('board.html'))!.isVisible())
+const boardTitle = () => board.evaluate(() => document.getElementById('title')!.textContent)
+const stopped = (title: string) => readFileSync(join(profile, 'logs', 'steve.log'), 'utf8').split(`"${title}" stopped`).length - 1
+
+await check('QA: closing a 3D model while it streams stops it for good, and a newer visual replaces one still streaming', async () => {
+  const lines = () => readFileSync(join(profile, 'logs', 'steve.log'), 'utf8').split('[scene] first line after').length - 1
+  const before = lines()
+  await ask('show me a slow turbine in 3D')
+  await until('streaming', async () => lines() > before && (await boardTitle()) === 'Slow turbine', 20000)
+  if (!(await board.evaluate(() => (document.getElementById('save') as HTMLButtonElement).disabled))) throw new Error('Save is offered before the model is finished')
+  await board.evaluate(() => document.getElementById('close')!.click())
+  await until('the stream stopped', () => stopped('Slow turbine') === 1)
+  await sleep(2000) // long enough for the rest of the stream, had it kept going
+  if (await boardVisible()) throw new Error('the closed visual came back')
+  if (await board.evaluate(() => [...(document.getElementById('history') as HTMLSelectElement).options].some((o) => o.textContent!.endsWith('Slow turbine')))) {
+    throw new Error('a cancelled model was kept in the gallery')
+  }
+  await until('idle', idle)
+  await ask('show me a slow turbine in 3D')
+  await until('streaming again', async () => lines() > before + 1 && (await boardTitle()) === 'Slow turbine', 20000)
+  await until('idle', idle)
+  await ask('show me a chart')
+  await until('the chart replaced it', async () => (await boardTitle()) === 'Test chart' && (await (await visualFrame()).evaluate(() => !!document.getElementById('c'))))
+  await until('the 3D stream stopped', () => stopped('Slow turbine') === 2)
+  await sleep(2000)
+  if ((await boardTitle()) !== 'Test chart') throw new Error('the stopped 3D model took the board back')
+  await board.evaluate(() => document.getElementById('close')!.click())
+})
+
+await check('QA: with no key for the visual model, STEVE says so instead of promising a visual', async () => {
+  const models = await panel.evaluate(async () => (await (window as any).steve.invoke('settings:get')).settings.models)
+  await panel.evaluate((m) => (window as any).steve.invoke('settings:save', { models: { ...m, visual: 'anthropic:claude-sonnet-5-5' } }), models)
+  try {
+    const from = await ask('show me a pump in 3D')
+    await until('the panel says the key is missing', () => panel.evaluate(() => document.getElementById('log')!.textContent!.includes('Add your anthropic API key')))
+    await until('the model was told', () => seen.slice(from).some((s) => isChat(s) && s.last.role === 'tool' && textOf(s.last).includes("Couldn't make the 3D model")))
+    if (seen.slice(from).some((s) => s.system.startsWith('You build one detailed 3D model'))) throw new Error('a scene was requested without a key')
+  } finally {
+    await panel.evaluate((m) => (window as any).steve.invoke('settings:save', { models: m }), models)
+  }
 })
 
 await check('copied-text helper: reads the clipboard only when asked, and can copy an answer back', async () => {

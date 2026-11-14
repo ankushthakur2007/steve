@@ -30,8 +30,12 @@ export function model(role: Role) {
 // The AI SDK falls back to these environment variables when no key is saved in settings.
 const ENV_KEYS: Record<string, string> = { openai: 'OPENAI_API_KEY', anthropic: 'ANTHROPIC_API_KEY', google: 'GOOGLE_GENERATIVE_AI_API_KEY' }
 
-/** Friendly error when the key for a role's provider is missing (a local OpenAI-compatible server needs none). */
+/** Friendly error when a role's model setting is malformed or its provider's key is missing (a local OpenAI-compatible server needs none). */
 export function missingKey(role: Role): string | null {
+  const id = getSettings().models[role]
+  if (!/^(openai|anthropic|google):\S+$/.test(id)) {
+    return `The ${role} model "${id}" should look like openai:gpt-6-luna or anthropic:claude-sonnet-5-5. Fix it in Settings > Models.`
+  }
   const p = providerOf(role) as KeyName
   if (getKeys()[p] || process.env[ENV_KEYS[p]] || (p === 'openai' && getSettings().openaiBaseURL)) return null
   return `Add your ${p} API key in STEVE's settings (the ${role} model is ${getSettings().models[role]}).`

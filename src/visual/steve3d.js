@@ -33,6 +33,10 @@ const MATS = {
   pcb: [0x2e7d55, 0, 0.5], concrete: [0xb9b6ae, 0, 0.9], bone: [0xeee3cc, 0, 0.6], muscle: [0xd9776f, 0, 0.55], white: [0xf4f4f1, 0, 0.5], black: [0x2a2b2f, 0, 0.5],
   red: [0xe2615a, 0, 0.5], orange: [0xf0954a, 0, 0.5], yellow: [0xf3c94c, 0, 0.5], green: [0x5bb48a, 0, 0.5],
   teal: [0x46b2ae, 0, 0.5], blue: [0x5b8fd9, 0, 0.5], purple: [0x9478d6, 0, 0.5], pink: [0xe68fb0, 0, 0.5],
+  // Names models reach for that aren't in the list above.
+  silver: [0xe6e8eb, 1, 0.18], titanium: [0x8b9097, 1, 0.38], carbon: [0x222326, 0.3, 0.32], ceramic: [0xf3f1ec, 0, 0.22],
+  skin: [0xe9b99c, 0, 0.55], leaf: [0x4f9a4a, 0, 0.6], sand: [0xdcc79a, 0, 0.9], stone: [0x9b9a95, 0, 0.85],
+  grey: [0x8e8e93, 0, 0.5], gray: [0x8e8e93, 0, 0.5], metal: [0xb9c0c8, 1, 0.32],
 }
 // Accent colours for tags and arrows: Apple's system colours.
 const INK = {
@@ -47,6 +51,7 @@ const CSS = `html,body{overflow:hidden}canvas{display:block}
 .s3d-labels{position:fixed;inset:0;pointer-events:none;overflow:hidden}
 .s3d-labels svg{position:absolute;inset:0;width:100%;height:100%}
 .s3d-tag{position:absolute;left:0;top:0;display:flex;align-items:center;gap:6px;pointer-events:auto;cursor:pointer;font:600 12px/1.25 ${FONT};letter-spacing:-.01em;padding:4px 10px 4px 8px;border-radius:8px;background:rgba(255,255,255,.84);-webkit-backdrop-filter:blur(16px) saturate(180%);backdrop-filter:blur(16px) saturate(180%);color:#1d1d1f;border:.5px solid rgba(0,0,0,.16);box-shadow:0 1px 1px rgba(0,0,0,.08),0 4px 14px rgba(0,0,0,.16);white-space:nowrap;user-select:none}
+.s3d-tag span{max-width:220px;overflow:hidden;text-overflow:ellipsis}
 .s3d-tag::before{content:'';flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:inset 0 0 0 .5px rgba(0,0,0,.18)}
 .s3d-tip{position:fixed;z-index:2;pointer-events:none;font:600 12px/1.25 ${FONT};padding:4px 9px;border-radius:7px;background:rgba(28,28,30,.82);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);color:#f5f5f7;border:.5px solid rgba(255,255,255,.14);transform:translate(14px,14px)}
 .s3d-error{position:fixed;left:16px;right:16px;bottom:16px;margin:0;padding:10px 14px;border-radius:12px;background:rgba(28,28,30,.9);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);color:#f5f5f7;border:.5px solid rgba(255,255,255,.14);font:13px/1.4 ${FONT}}`
@@ -196,10 +201,11 @@ export function stage(opts = {}) {
 
     /** A material by name (steel, aluminium, iron, chrome, brass, copper, gold, plastic, rubber, glass, clay, wood, pcb, concrete, bone, muscle, white, black, red, orange, yellow, green, teal, blue, purple, pink) or any CSS colour. */
     mat(name = 'plastic', extra = {}) {
-      if (name === 'glass') {
-        return new THREE.MeshPhysicalMaterial({ color: 0xe6f4ff, roughness: 0.05, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide, clearcoat: 1, ...extra })
+      const n = String(name).toLowerCase()
+      if (n === 'glass' || n === 'water' || n === 'transparent') {
+        return new THREE.MeshPhysicalMaterial({ color: n === 'water' ? 0x6cb8ff : 0xe6f4ff, roughness: 0.05, transparent: true, opacity: 0.25, depthWrite: false, side: THREE.DoubleSide, clearcoat: 1, ...extra })
       }
-      const [color, metalness, roughness] = MATS[String(name).toLowerCase()] ?? [name, 0, 0.5]
+      const [color, metalness, roughness] = MATS[n] ?? [name, 0, 0.5]
       return new THREE.MeshPhysicalMaterial({ color, metalness, roughness, clearcoat: metalness ? 0 : 0.2, clearcoatRoughness: 0.5, ...extra })
     },
 
@@ -233,7 +239,8 @@ export function stage(opts = {}) {
       const accent = INK[o.color] ?? INK[CYCLE[labels.length % CYCLE.length]]
       const el = document.createElement('div')
       el.className = 's3d-tag'
-      el.textContent = text ?? obj?.name ?? ''
+      el.append(Object.assign(document.createElement('span'), { textContent: String(text ?? obj?.name ?? '') }))
+      el.title = el.textContent // long tags are cut short; the full text shows on hover
       el.style.cssText = `--accent:${accent};display:none`
       const lead = document.createElementNS(NS, 'line')
       const dot = document.createElementNS(NS, 'circle')
@@ -363,7 +370,7 @@ export function stage(opts = {}) {
     /** Glows the named parts until the next call. */
     highlight(names = []) {
       glowing.clear()
-      for (const n of names) { const o = find(n); if (o?.userData.part) glowing.add(o.userData.part) }
+      for (const n of [].concat(names)) { const o = find(n); if (o?.userData.part) glowing.add(o.userData.part) }
       refreshGlow()
     },
 
@@ -372,7 +379,10 @@ export function stage(opts = {}) {
      * { caption, focus, explode, cut, labels: [names], highlight: [names], run(s) }.
      */
     tour(steps, o = {}) {
-      const showLabels = (st) => { for (const L of labels) L.shown = !st.labels || st.labels.some((n) => L.text === n || L.obj?.name === n) }
+      const showLabels = (st) => {
+        const want = st.labels == null ? null : [].concat(st.labels) // a single name works too
+        for (const L of labels) L.shown = !want || want.some((n) => L.text === n || L.obj?.name === n)
+      }
       const apply = (st) => {
         touring = true
         controls.autoRotate = false
@@ -631,8 +641,22 @@ export function stage(opts = {}) {
 // shapes are built around the y axis; "axis" in the scene line turns them to x or z.
 // ---------------------------------------------------------------------------------------------
 const mesh = (g, m) => new THREE.Mesh(g, m)
-const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
-const pair = (v, d) => (Array.isArray(v) && v.length >= 2 ? v.map((x, i) => num(x, d[i])) : d)
+// The model's numbers are not trusted: strings like "0.5" are read, anything else falls back to a
+// default, and counts are capped so a typo like "blades": 100000 can't freeze the app.
+const num = (v, d) => {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v
+  return typeof n === 'number' && Number.isFinite(n) ? n : d
+}
+const count = (v, d, min, max) => Math.min(max, Math.max(min, Math.round(num(v, d))))
+const pair = (v, d) => (Array.isArray(v) && v.length >= 2 ? d.map((x, i) => num(v[i], x)) : d)
+/** [x, y, z] from the model, or null: needs at least two numbers; a missing z is 0. */
+export function vec3(v) {
+  if (!Array.isArray(v) || v.length < 2) return null
+  const out = [0, 1, 2].map((i) => num(v[i], i === 2 ? 0 : NaN))
+  return out.every(Number.isFinite) ? out : null
+}
+const points3 = (v) => (Array.isArray(v) ? v.map(vec3).filter(Boolean) : [])
+const points2 = (v) => (Array.isArray(v) ? v.map((q) => vec3(q)?.slice(0, 2)).filter(Boolean) : [])
 
 /** A blade along +x from the origin, chord along z, twisted about its length: rotors, fans, turbines. */
 function blade(len, chord, thick, twistDeg) {
@@ -676,21 +700,21 @@ const SHAPES = {
     const r = num(p.round, Math.min(w, h, d) * 0.06) // a slight bevel, like anything manufactured
     return mesh(r > 0 ? roundedBox(w, h, d, r) : new THREE.BoxGeometry(w, h, d), m)
   },
-  cylinder: (p, m) => mesh(new THREE.CylinderGeometry(num(p.r2, num(p.r, 0.5)), num(p.r, 0.5), num(p.h, 1), num(p.sides, 64)), m),
+  cylinder: (p, m) => mesh(new THREE.CylinderGeometry(num(p.r2, num(p.r, 0.5)), num(p.r, 0.5), num(p.h, 1), count(p.sides, 64, 3, 128)), m),
   cone: (p, m) => mesh(new THREE.ConeGeometry(num(p.r, 0.5), num(p.h, 1), 64), m),
   sphere: (p, m) => mesh(new THREE.SphereGeometry(num(p.r, 0.5), 64, 40), m),
   capsule: (p, m) => mesh(new THREE.CapsuleGeometry(num(p.r, 0.3), num(p.h, 1), 12, 32), m),
   torus: (p, m) => mesh(new THREE.TorusGeometry(num(p.r, 0.5), num(p.thickness, 0.1), 32, 96).rotateX(Math.PI / 2), m),
-  lathe: (p, m) => mesh(lathe(Array.isArray(p.profile) && p.profile.length > 1 ? p.profile : [[0, -0.5], [0.5, -0.5], [0.5, 0.5], [0, 0.5]], 96), m),
-  tube: (p, m) => mesh(tube(Array.isArray(p.points) && p.points.length > 1 ? p.points : [[0, 0, 0], [1, 0, 0]], num(p.r, 0.05)), m),
+  lathe: (p, m) => { const pr = points2(p.profile); return mesh(lathe(pr.length > 1 ? pr.slice(0, 200) : [[0, -0.5], [0.5, -0.5], [0.5, 0.5], [0, 0.5]], 96), m) },
+  tube: (p, m) => { const pts = points3(p.points); return mesh(tube(pts.length > 1 ? pts.slice(0, 200) : [[0, 0, 0], [1, 0, 0]], num(p.r, 0.05)), m) },
   extrude: (p, m) => {
-    const pts = Array.isArray(p.points) && p.points.length > 2 ? p.points : [[-0.5, -0.5], [0.5, -0.5], [0, 0.5]]
+    const given = points2(p.points), pts = given.length > 2 ? given.slice(0, 500) : [[-0.5, -0.5], [0.5, -0.5], [0, 0.5]]
     const depth = num(p.depth, 0.2), bevel = num(p.bevel, depth * 0.12)
     const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y))), { depth, bevelEnabled: bevel > 0, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 3 })
     return mesh(g.translate(0, 0, -depth / 2), m)
   },
   gear: (p, m) => {
-    const r = num(p.r, 0.5), teeth = Math.max(6, Math.round(num(p.teeth, 20))), t = num(p.thickness, r * 0.25), depth = num(p.depth, r * 0.12)
+    const r = num(p.r, 0.5), teeth = count(p.teeth, 20, 6, 200), t = num(p.thickness, r * 0.25), depth = num(p.depth, r * 0.12)
     const shape = new THREE.Shape()
     for (let i = 0; i < teeth; i++) {
       const a = (i / teeth) * TAU, w = TAU / teeth
@@ -705,7 +729,7 @@ const SHAPES = {
     return mesh(g.translate(0, 0, -t / 2).rotateX(-Math.PI / 2), m)
   },
   fan: (p, m) => {
-    const r = num(p.r, 0.5), n = Math.max(2, Math.round(num(p.blades, 12))), hub = num(p.hub, r * 0.28)
+    const r = num(p.r, 0.5), n = count(p.blades, 12, 2, 64), hub = Math.min(num(p.hub, r * 0.28), r * 0.8)
     const g = new THREE.Group()
     g.add(mesh(lathe([[0, -hub * 0.7], [hub, -hub * 0.6], [hub, hub * 0.25], [hub * 0.7, hub * 0.75], [hub * 0.3, hub * 0.98], [0, hub * 1.05]], 64), m))
     const len = r - hub * 0.85
@@ -713,7 +737,7 @@ const SHAPES = {
     return g
   },
   discs: (p, m) => {
-    const n = Math.max(1, Math.round(num(p.count, 5))), r = num(p.r, 0.5), length = num(p.length, 1), bladesN = Math.round(num(p.blades, 0))
+    const n = count(p.count, 5, 1, 40), r = num(p.r, 0.5), length = num(p.length, 1), bladesN = count(p.blades, 0, 0, 96)
     const g = new THREE.Group(), gap = n > 1 ? length / (n - 1) : 0
     const thick = num(p.thickness, Math.max(length / n * 0.35, r * 0.04))
     const disc = bladesN > 0
@@ -724,7 +748,7 @@ const SHAPES = {
     return g
   },
   spring: (p, m) => {
-    const r = num(p.r, 0.2), turns = Math.max(1, num(p.turns, 8)), length = num(p.length, 1)
+    const r = num(p.r, 0.2), turns = count(p.turns, 8, 1, 60), length = num(p.length, 1)
     return mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(helixPoints(r, turns, length)), Math.round(turns * 48), num(p.wire, r * 0.12), 12), m)
   },
   bolt: (p, m) => {
@@ -739,7 +763,7 @@ const SHAPES = {
     return g
   },
   wheel: (p, m, s) => {
-    const r = num(p.r, 0.4), w = num(p.width, r * 0.45), n = Math.max(0, Math.round(num(p.spokes, 5))), g = new THREE.Group()
+    const r = num(p.r, 0.4), w = num(p.width, r * 0.45), n = count(p.spokes, 5, 0, 24), g = new THREE.Group()
     const rim = r * 0.68
     const tyre = [[rim, -w * 0.45], [r * 0.93, -w / 2], [r, -w * 0.3], [r, w * 0.3], [r * 0.93, w / 2], [rim, w * 0.45], [rim, -w * 0.45]]
     g.add(mesh(lathe(tyre, 96), s.mat('rubber')))
@@ -765,7 +789,7 @@ const SHAPES = {
     return g
   },
   chip: (p, m, s) => {
-    const [w, d] = pair(p.size, [1, 1]), h = num(p.h, Math.min(w, d) * 0.12), n = Math.max(0, Math.round(num(p.pins, 8)))
+    const [w, d] = pair(p.size, [1, 1]), h = num(p.h, Math.min(w, d) * 0.12), n = count(p.pins, 8, 0, 64)
     const g = new THREE.Group()
     g.add(mesh(roundedBox(w, h, d, h * 0.25), p.mat || p.color ? m : s.mat('black')))
     const mark = mesh(new THREE.CylinderGeometry(Math.min(w, d) * 0.05, Math.min(w, d) * 0.05, h * 0.05, 24), s.mat('#3a3b40'))
@@ -787,7 +811,7 @@ const SHAPES = {
     return g
   },
   header: (p, m, s) => {
-    const rows = Math.max(1, Math.round(num(p.rows, 2))), cols = Math.max(1, Math.round(num(p.cols, 20))), pitch = num(p.pitch, 0.254)
+    const rows = count(p.rows, 2, 1, 4), cols = count(p.cols, 20, 1, 80), pitch = num(p.pitch, 0.254)
     const g = new THREE.Group()
     g.add(mesh(roundedBox(cols * pitch, pitch, rows * pitch, pitch * 0.1), s.mat('black')))
     const pin = new THREE.BoxGeometry(pitch * 0.25, pitch * 2.4, pitch * 0.25), all = []
@@ -838,7 +862,7 @@ const SHAPES = {
     return g
   },
   helix: (p, m, s) => {
-    const r = num(p.r, 0.5), turns = Math.max(1, num(p.turns, 3)), length = num(p.length, turns * 1.4), g = new THREE.Group()
+    const r = num(p.r, 0.5), turns = count(p.turns, 3, 1, 20), length = num(p.length, turns * 1.4), g = new THREE.Group()
     const a = helixPoints(r, turns, length, 0), b = helixPoints(r, turns, length, Math.PI * 0.8)
     g.add(mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(a), Math.round(turns * 64), r * 0.09, 12), m))
     g.add(mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(b), Math.round(turns * 64), r * 0.09, 12), p.mat2 ? s.mat(p.mat2) : s.mat('orange')))
@@ -872,7 +896,7 @@ export const SHAPE_NAMES = Object.keys(SHAPES)
 const AXES = { x: new THREE.Euler(0, 0, -Math.PI / 2), z: new THREE.Euler(Math.PI / 2, 0, 0) }
 
 /** Builds one shape from a scene line: the shape itself, turned, rotated, moved and repeated. */
-function buildShape(s, cmd) {
+export function buildShape(s, cmd) {
   const shape = String(cmd.shape ?? 'box').toLowerCase()
   if (!SHAPES[shape]) console.warn(`[3D] unknown shape "${cmd.shape}", drawing a box`)
   const material = cmd.mat || !cmd.color ? s.mat(cmd.mat ?? 'plastic', cmd.color ? { color: cmd.color } : {}) : s.mat(cmd.color)
@@ -880,27 +904,34 @@ function buildShape(s, cmd) {
   const holder = new THREE.Group() // keeps the shape's own turn separate from its placement
   holder.add(obj)
   if (AXES[cmd.axis]) obj.quaternion.setFromEuler(AXES[cmd.axis])
-  if (isPoint(cmd.rot)) holder.rotation.set(...cmd.rot.slice(0, 3).map((d) => THREE.MathUtils.degToRad(num(d, 0))))
-  if (typeof cmd.scale === 'number') holder.scale.setScalar(cmd.scale)
-  else if (isPoint(cmd.scale)) holder.scale.set(...cmd.scale)
-  if (shape !== 'tube' && shape !== 'pipe' && isPoint(cmd.at)) holder.position.set(...cmd.at)
-  if (cmd.spin && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  const rot = vec3(cmd.rot), at = vec3(cmd.at), scale = vec3(cmd.scale)
+  if (rot) holder.rotation.set(...rot.map((d) => THREE.MathUtils.degToRad(d)))
+  if (num(cmd.scale, 0) > 0) holder.scale.setScalar(num(cmd.scale, 1))
+  else if (scale) holder.scale.set(...scale)
+  if (shape !== 'tube' && shape !== 'pipe' && at) holder.position.set(...at)
+  if (num(cmd.spin, 0) && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     const up = new THREE.Vector3(0, 1, 0), speed = num(cmd.spin, 2)
     s.onFrame((t, dt) => obj.rotateOnAxis(up, speed * dt)) // about the shape's own axis
   }
-  return repeat(holder, cmd)
+  const built = repeat(holder, cmd)
+  const b = new THREE.Box3().setFromObject(built)
+  if (![b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z].every(Number.isFinite)) {
+    console.warn(`[3D] skipped a "${shape}" whose size isn't a number`)
+    return null
+  }
+  return built
 }
 
 /** "array": {count, step} lays copies in a row; "ring": {count, radius, axis} spreads them around a circle. */
 function repeat(holder, cmd) {
   const a = cmd.array, r = cmd.ring
   if (a && num(a.count, 0) > 1) {
-    const g = new THREE.Group(), step = v3(isPoint(a.step) ? a.step : [1, 0, 0])
-    for (let i = 0; i < Math.min(200, a.count); i++) { const c = i ? holder.clone() : holder; c.position.add(step.clone().multiplyScalar(i)); g.add(c) }
+    const g = new THREE.Group(), step = v3(vec3(a.step) ?? [1, 0, 0])
+    for (let i = 0; i < count(a.count, 2, 2, 200); i++) { const c = i ? holder.clone() : holder; c.position.add(step.clone().multiplyScalar(i)); g.add(c) }
     return g
   }
   if (r && num(r.count, 0) > 1) {
-    const g = new THREE.Group(), axis = r.axis ?? cmd.axis ?? 'y', radius = num(r.radius, 1), n = Math.min(200, r.count)
+    const g = new THREE.Group(), axis = r.axis ?? cmd.axis ?? 'y', radius = num(r.radius, 1), n = count(r.count, 2, 2, 200)
     const center = holder.position.clone()
     holder.position.set(0, 0, 0)
     const offset = axis === 'y' ? new THREE.Vector3(radius, 0, 0) : axis === 'x' ? new THREE.Vector3(0, radius, 0) : new THREE.Vector3(radius, 0, 0)
@@ -918,21 +949,30 @@ function repeat(holder, cmd) {
   return holder
 }
 
+const names = (v) => (v == null ? undefined : [].concat(v).filter((x) => typeof x === 'string'))
+
 /** Applies one scene line to the stage. Tour steps are collected in `steps`. */
 export function apply(s, cmd, steps) {
   if (!cmd || typeof cmd !== 'object') return
-  if (isPoint(cmd.view)) s.setView(cmd.view)
+  if (vec3(cmd.view)) s.setView(vec3(cmd.view))
   if (typeof cmd.part === 'string' && !cmd.to) {
+    const shape = buildShape(s, cmd)
+    if (!shape) return
     const g = new THREE.Group()
-    g.add(buildShape(s, cmd))
-    s.part(cmd.part, g, { info: cmd.info, label: cmd.label, color: cmd.tag, explode: isPoint(cmd.explode) ? cmd.explode : undefined, parent: cmd.parent })
-  } else if (typeof cmd.to === 'string') s.addTo(cmd.to, buildShape(s, cmd))
-  else if (Array.isArray(cmd.arrow)) s.arrow(cmd.arrow.filter(isPoint), { color: cmd.color, label: cmd.label, radius: cmd.radius })
-  else if (typeof cmd.label === 'string' || isPoint(cmd.label)) s.label(cmd.label, cmd.text, { color: cmd.tag })
+    g.add(shape)
+    s.part(cmd.part, g, { info: cmd.info, label: cmd.label, color: cmd.tag, explode: vec3(cmd.explode) ?? undefined, parent: cmd.parent })
+  } else if (typeof cmd.to === 'string') {
+    const shape = buildShape(s, cmd)
+    if (shape) s.addTo(cmd.to, shape)
+  }
+  else if (Array.isArray(cmd.arrow)) s.arrow(points3(cmd.arrow).slice(0, 50), { color: cmd.color, label: cmd.label, radius: num(cmd.radius, undefined) })
+  else if (typeof cmd.label === 'string' || vec3(cmd.label)) s.label(vec3(cmd.label) ?? cmd.label, typeof cmd.text === 'string' ? cmd.text : undefined, { color: cmd.tag })
   else if (typeof cmd.step === 'string') {
     steps.push({
-      caption: cmd.step, focus: cmd.focus, explode: num(cmd.explode, 0), labels: cmd.labels, highlight: cmd.highlight,
-      cut: typeof cmd.cut === 'string' ? { axis: cmd.cut } : cmd.cut,
+      // Lenient about shapes: "labels": "Fan" works like ["Fan"].
+      caption: cmd.step, focus: typeof cmd.focus === 'string' ? cmd.focus : null, explode: num(cmd.explode, 0),
+      labels: names(cmd.labels), highlight: names(cmd.highlight) ?? [],
+      cut: typeof cmd.cut === 'string' ? { axis: cmd.cut } : cmd.cut === true || (cmd.cut && typeof cmd.cut === 'object') ? cmd.cut : false,
     })
   }
 }

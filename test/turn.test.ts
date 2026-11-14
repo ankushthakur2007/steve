@@ -43,9 +43,9 @@ vi.mock('@ai-sdk/openai', async () => {
   return { createOpenAI: () => new MockProviderV4({ languageModels: { 'gpt-6-luna': model } }) }
 })
 
-const { chat } = await import('../src/main/brain')
+const { chat, missingKey } = await import('../src/main/brain')
 const { createSpeaker } = await import('../src/main/tts')
-const { setKeys, saveSettings } = await import('../src/main/settings')
+const { getSettings, setKeys, saveSettings } = await import('../src/main/settings')
 
 const usage = { inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, text: 5, reasoning: 0 } }
 const text = (...deltas: string[]) => [
@@ -145,4 +145,24 @@ it('sends ElevenLabs requests with the Flash model, mp3 output and the xi-api-ke
   expect(JSON.parse(String(req!.init.body))).toEqual({ text: 'Hello there.', model_id: 'eleven_flash_v2_5' })
   saveSettings({ voice: 'off' })
   expect(await synth('x', new AbortController().signal)).toBeNull()
+})
+
+it('explains a malformed model name instead of asking for a key that does not exist', () => {
+  const models = getSettings().models
+  expect(missingKey('chat')).toBeNull()
+  for (const bad of ['gpt-6-luna', 'openai:', 'mistral:large', ' ']) {
+    saveSettings({ models: { ...models, visual: bad } })
+    expect(missingKey('visual'), bad).toMatch(/should look like openai:gpt-6-luna/)
+  }
+  saveSettings({ models })
+})
+
+it('keeps only the newest remembered facts once there are too many for every request', async () => {
+  const memory = await import('../src/main/memory')
+  for (let i = 0; i < 300; i++) memory.remember(`fact number ${i} about the user`)
+  const f = memory.facts()
+  expect(f.length).toBeLessThanOrEqual(4000)
+  expect(f.startsWith('- fact number')).toBe(true) // whole lines
+  expect(f.endsWith('fact number 299 about the user')).toBe(true)
+  memory.wipe()
 })

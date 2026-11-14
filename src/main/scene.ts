@@ -19,12 +19,21 @@ export function cancelVisual() {
   current?.abort()
   current = null
 }
-function begin() {
+// A stalled connection must not leave "Making ..." on screen forever.
+const FIRST_LINE_MS = 45_000, TOTAL_MS = 150_000
+class TooSlow extends Error {}
+
+function begin(ms = TOTAL_MS) {
   cancelVisual()
-  return (current = new AbortController())
+  const abort = (current = new AbortController())
+  const timer = setTimeout(() => abort.abort(new TooSlow(`the model took longer than ${ms / 1000} seconds`)), ms)
+  abort.signal.addEventListener('abort', () => clearTimeout(timer))
+  return abort
 }
 function failed(abort: AbortController, title: string, e: unknown) {
-  if (abort.signal.aborted) return log('visual', `"${title}" stopped`)
+  const reason = abort.signal.reason
+  if (reason instanceof TooSlow) e = reason // timed out: say so, unlike a cancel
+  else if (abort.signal.aborted) return log('visual', `"${title}" stopped`)
   logError('visual', e)
   visualFailed(`Couldn't make "${title}": ${errorText(e)}`)
 }
@@ -39,9 +48,12 @@ export async function make3d(title: string, brief: string) {
     log('scene', `asking ${getSettings().models.visual} for "${title}"`, brief)
     // Low reasoning: the first part should be on screen within a second or two.
     const result = streamText({ model: model('visual'), system: SCENE_PROMPT, prompt: brief, reasoning: 'low', abortSignal: abort.signal })
+    const waiting = setTimeout(() => { if (!lines.length) abort.abort(new TooSlow(`the model sent nothing for ${FIRST_LINE_MS / 1000} seconds`)) }, FIRST_LINE_MS)
+    abort.signal.addEventListener('abort', () => clearTimeout(waiting))
     let buf = ''
     for await (const part of result.fullStream) {
       if (part.type === 'error') throw part.error
+      if (part.type === 'abort') break
       if (part.type !== 'text-delta') continue
       const { objects, rest } = takeObjects(buf + part.text)
       buf = rest
@@ -52,6 +64,9 @@ export async function make3d(title: string, brief: string) {
         sceneLine(id, o)
       }
     }
+    // A cancelled stream ends quietly instead of throwing: never keep or finish a half-built model.
+    clearTimeout(waiting)
+    if (abort.signal.aborted) throw new Error('cancelled')
     const usage = await result.totalUsage
     addTokens(getSettings().models.visual, usage)
     log('scene', `"${title}" finished in ${Date.now() - t0} ms: ${lines.length} lines${skipped ? `, ${skipped} skipped` : ''}`, { in: usage.inputTokens, out: usage.outputTokens })
@@ -62,6 +77,7 @@ export async function make3d(title: string, brief: string) {
     failed(abort, title, e)
   } finally {
     if (current === abort) current = null
+    abort.abort() // done either way: frees the timeout timers
   }
 }
 
@@ -82,6 +98,7 @@ export async function make2d(title: string, brief: string) {
     failed(abort, title, e)
   } finally {
     if (current === abort) current = null
+    abort.abort() // done either way: frees the timeout timers
   }
 }
 
@@ -96,5 +113,6 @@ export async function makeMolecule(name: string) {
     failed(abort, name, e)
   } finally {
     if (current === abort) current = null
+    abort.abort() // done either way: frees the timeout timers
   }
 }

@@ -2,6 +2,35 @@
 
 What it would take to make STEVE the best desktop companion there is, using the stack it already has (Electron, the AI SDK, Deepgram, Three.js, MCP) and keeping running costs close to zero. Ordered by value for the effort; each item says what it reuses and what it costs to run.
 
+## Winning the competition
+
+What judges remember is one or two moments that feel like magic, an app that works the first time they try it, and proof that it is fast, cheap and private. Ordered by impact on a demo for the effort.
+
+**Moments that win a demo (1 to 3 days each)**
+1. **Tours that follow STEVE's voice.** As STEVE says "and this is the compressor", the camera flies to it, cuts it open and tags it. The chat model already times [POINT] tags to the sentence being spoken; a [STEP:n] tag does the same for the 3D tour. Free to run.
+2. **"Explain this in 3D, right here."** Point at a product photo, a diagram in a PDF or a part on a web page: STEVE builds the model and opens it right beside that spot on screen (the HeyClicky Raspberry Pi moment). The screenshot already tells the chat model where things are; show_3d only needs to take that point.
+3. **A tutor that watches you do the step.** "Teach me to add a keyframe in Blender": STEVE points at step 1, then checks a small screenshot every couple of seconds while a visible "watching" badge is on, and moves to step 2 by itself when it sees the step done. Opt-in per lesson, stops when the lesson ends. Reuses capture, pointing and the drawing tags.
+4. **Ask about a region.** Hold the talk keys and drag a box: STEVE reads that part of the screen at full resolution. Small text becomes readable, and the request costs less.
+
+**What sets STEVE apart when judges score it**
+5. **Private mode.** Local speech-to-text (Moonshine or Whisper), local voice (Kokoro or Piper) and a local model through the existing OpenAI-compatible URL setting, with a visible "nothing leaves this computer" badge. Running cost $0.
+6. **Accessibility.** "Describe my screen" for people with low vision, everything reachable by keyboard and voice, large captions. Inclusive design scores well and is mostly prompts and settings.
+7. **Lesson notebook.** Export a session as a document: the questions, STEVE's answers, the drawings it made on screen and the 3D models (as the saved web pages). Learning you can keep.
+8. **"Hey Steve" wake word**, opt-in, with openWakeWord on the CPU.
+
+**Polish that shows in a three-minute demo**
+9. **Proof in numbers.** Run the pointing benchmark and the `[latency]` log with the real model and put the results in the README: pointing accuracy, key-up to first word, first 3D part on screen, cost per question.
+10. **Installs without warnings.** Signed installers and auto-update (see "Before sharing"), so a judge's first impression isn't a security dialog.
+11. **A demo video and script** (below).
+
+**Demo script (about 2 minutes)**
+1. Open STEVE with no key: click *Gearbox* on the empty chat. A 3D model assembles on screen, with tags, a step bar and a cutaway. It works for anyone, instantly.
+2. With keys, on a real app: hold Control + Option, "where do I change the export resolution?". STEVE answers out loud and its buddy flies to the setting.
+3. "Explain how a jet engine works in 3D." STEVE talks while the model builds part by part; play the tour; click the turbine and STEVE explains it.
+4. Copy an error message: "what does this mean?". Then reply hands-free, without the keys.
+5. "Open my downloads and sort the PDFs into a folder": autopilot with the red banner; move the mouse to take back control.
+6. Settings > Usage: the whole demo cost a few cents.
+
 ## Done in this round
 
 - **A look of its own.** A yellow ink-outlined character whose eyes follow what it points at; it bobs, blinks, glows red while listening, looks around while thinking and moves its mouth while speaking. Its drawings are marker-style ink that reads on any background, and its words are set in its own casual typeface. The panel, visuals window and setup follow the system's light or dark mode (frosted glass on macOS). There's a new app icon and tray icon.

@@ -1,0 +1,13 @@
+{"view":[-1,0.5,1.3]}
+{"part":"Nacelle","shape":"lathe","axis":"x","profile":[[0.95,-2],[1.08,-1.6],[1.06,1],[0.72,2],[0.66,2],[0.98,1],[1,-1.6],[0.9,-2]],"mat":"aluminium","info":"The casing that guides air into the engine."}
+{"part":"Fan","shape":"fan","axis":"x","at":[-1.5,0,0],"r":0.92,"blades":22,"hub":0.28,"twist":40,"mat":"steel","spin":8,"label":true,"info":"Pulls in air; most of it flows around the core and makes most of the thrust."}
+{"part":"Compressor","shape":"discs","axis":"x","at":[-0.6,0,0],"count":7,"r":0.42,"length":0.8,"blades":24,"mat":"steel","label":true,"info":"Squeezes the air to a fraction of its volume."}
+{"part":"Combustor","shape":"torus","axis":"x","at":[0.15,0,0],"r":0.3,"thickness":0.09,"mat":"copper","label":true,"tag":"orange","info":"Fuel burns in the squeezed air."}
+{"to":"Combustor","shape":"cylinder","axis":"x","at":[0.15,0.3,0],"r":0.025,"h":0.25,"mat":"brass","ring":{"count":10,"radius":0.3}}
+{"part":"Turbine","shape":"discs","axis":"x","at":[0.65,0,0],"count":4,"r":0.38,"length":0.4,"blades":30,"mat":"brass","label":true,"info":"Hot gas spins it, and it drives the fan and compressor."}
+{"to":"Turbine","shape":"cylinder","axis":"x","at":[-0.4,0,0],"r":0.05,"h":2.2,"mat":"steel"}
+{"arrow":[[-2.8,0.25,0],[-1,0.25,0],[0.5,0.2,0],[2.8,0.1,0]],"color":"blue","label":"Airflow"}
+{"step":"A turbofan: a big fan in front of a small jet engine.","labels":["Fan","Airflow"]}
+{"step":"The fan pulls air in.","focus":"Fan","labels":["Fan"]}
+{"step":"Inside, the core squeezes, burns and expands the air.","cut":"z","labels":["Compressor","Combustor","Turbine","Airflow"]}
+{"step":"The turbine turns the fan through a shaft.","cut":"z","focus":"Turbine","highlight":["Turbine","Fan"]}

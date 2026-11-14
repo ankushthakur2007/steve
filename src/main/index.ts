@@ -7,10 +7,13 @@ import {
 import { release } from 'node:os'
 import { z } from 'zod'
 import { answerTask, initTasks, listTasks, startTask, stopTask } from './agents'
-import { currentVisual, goVisual, hideBoard, registerLibProtocol, resizeBoard, saveVisual } from './board'
+import { currentVisual, goVisual, hideBoard, registerLibProtocol, resizeBoard, saveVisual, showVisual } from './board'
 import { cancelVisual, make2d, make3d, makeMolecule } from './scene'
+import { DEMOS } from './demos'
+import { sceneHtml } from './visual'
 import { chat, missingKey, note, seedHistory } from './brain'
 import { capture, type Shot } from './capture'
+import { fitSize } from './coords'
 import { controlComputer, controlling, stopControl } from './control'
 import { startHotkeys, stopHotkeys } from './hotkey'
 import { debugOn, log, logDir, logError, short, timed } from './log'
@@ -78,6 +81,7 @@ function interrupt() {
 function chatTools(signal: AbortSignal): ToolSet {
   return {
     // Visuals are made in the background (scene.ts): the tool returns at once so STEVE keeps talking.
+    // A missing key or the daily limit is checked first, so the model can say so instead of promising a visual.
     show_3d: tool({
       description: 'Show a detailed, interactive 3D model of a real, physical thing (machine, device, vehicle, building, organ, cell, planet) floating on the user\'s screen. It builds up part by part while you talk.',
       inputSchema: z.object({
@@ -85,6 +89,8 @@ function chatTools(signal: AbortSignal): ToolSet {
         brief: z.string().describe('The object and its real shape and proportions, the 4 to 8 parts that matter and what each does, what moves or flows, and the tour steps.'),
       }),
       execute: async ({ title, brief }) => {
+        const blocked = missingKey('visual') ?? overLimit()
+        if (blocked) { report(blocked); return `Couldn't make the 3D model: ${blocked}` }
         void make3d(title, brief)
         return `A 3D model of "${title}" is being built on the user's screen, part by part. Explain it out loud now; don't wait for it.`
       },
@@ -96,6 +102,8 @@ function chatTools(signal: AbortSignal): ToolSet {
         brief: z.string().describe('Everything the visual should show and let the user do, including all data, labels, steps and which parts are clickable.'),
       }),
       execute: async ({ title, brief }) => {
+        const blocked = missingKey('visual') ?? overLimit()
+        if (blocked) { report(blocked); return `Couldn't make the visual: ${blocked}` }
         void make2d(title, brief)
         return `"${title}" is being drawn on the user's screen and appears in a few seconds. Explain it out loud now; don't wait for it.`
       },
@@ -144,7 +152,8 @@ function chatTools(signal: AbortSignal): ToolSet {
         if (!item) return { kind: 'empty' }
         const img = nativeImage.createFromBuffer(Buffer.from(await (await item.getType('image/png')).arrayBuffer()))
         if (img.isEmpty()) return { kind: 'empty' }
-        const jpeg = (img.getSize().width > 1600 ? img.resize({ width: 1600 }) : img).toJPEG(80)
+        const size = img.getSize(), fit = fitSize(size.width, size.height, 1600) // tall images too, e.g. a full-page screenshot
+        const jpeg = (fit.width < size.width ? img.resize(fit) : img).toJPEG(80)
         return { kind: 'image', data: jpeg.toString('base64') }
       },
       toModelOutput: ({ output }: { output: any }) => output.kind === 'image'
@@ -375,6 +384,7 @@ function settingsView() {
     keysSet: Object.fromEntries((['openai', 'anthropic', 'google', 'deepgram', 'elevenlabs'] as KeyName[]).map((k) => [k, !!keys[k]])),
     platform: process.platform,
     memoryDir: memory.memoryDir(),
+    canChat: !missingKey('chat'), // a key (saved or in the environment) or a local server
   }
 }
 
@@ -415,6 +425,13 @@ function registerIpc() {
   ipcMain.on('board:go', (_e, i: number) => goVisual(i))
   ipcMain.handle('board:save', () => saveVisual())
   ipcMain.on('board:close', () => { cancelVisual(); hideBoard() })
+  ipcMain.on('demo', (_e, i: number) => {
+    const demo = DEMOS[i]
+    if (!demo) return
+    log('visual', `demo: ${demo.title}`)
+    cancelVisual()
+    void showVisual(demo.title, sceneHtml(demo.lines)) // replayed from the built-in scene: no model call, no key
+  })
   ipcMain.on('board:size', () => resizeBoard())
   ipcMain.on('open-link', (_e, url: string) => { if (/^https:\/\//.test(String(url))) void shell.openExternal(url) })
   ipcMain.handle('tasks:list', () => listTasks())

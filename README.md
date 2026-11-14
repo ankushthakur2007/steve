@@ -34,6 +34,7 @@ On macOS, grant **Microphone**, **Screen Recording** and **Accessibility** when 
 - **Type:** **Ctrl + Shift + Space** (**Cmd + Shift + Space**) opens the panel. The **Screen** toggle decides whether STEVE sees your screen. The suggestions on the empty chat are a quick way to try things.
 - **Copied text:** copy something and say "explain what I copied" or "translate this and copy it". STEVE reads the clipboard only when you ask, says so in the chat, and can put its answer back on the clipboard.
 - **Visuals:** ask "explain how a jet engine works in 3D" or "show me how merge sort works". STEVE starts explaining straight away while the visual is made in the background. A 3D model builds up on your screen part by part as the AI writes it, with no background, frosted tags and sharp edges; drag to turn it, click a part to ask about it, and use the step bar for the guided tour (camera moves, cutaways, exploded views). Diagrams and charts appear a few seconds later on a dark card. Visuals float on the side of the screen away from your cursor; hover over one to show its toolbar: move it by dragging the title, make it bigger, close it (or press Esc), go back and forward through this session's visuals, or **Save** it as a web page that opens in any browser.
+- **No key yet?** The empty chat offers three built-in 3D demos (jet engine, Raspberry Pi, gearbox) that play without any key or model call.
 - **Tasks:** ask "research the best open-source rendering engines for my project". The Tasks tab shows progress, questions from the agent, and a Stop button. Agents can use a browser window you can watch.
 - **Do it for me:** ask "open my downloads folder and sort the PDFs into a folder". The first time, STEVE asks permission; choose **Always allow** to switch on autopilot so it never asks again (turn it off under Settings > Mouse and keyboard). It shows a red banner and a red screen edge while in control, asks before anything consequential, and stops as soon as you move the mouse or press Esc.
 - **Memory:** "remember that I use DaVinci Resolve 20" or "forget that". Settings > Conversation opens or deletes the memory folder. Screenshots are never stored.
@@ -71,17 +72,20 @@ Phases from the plan and where they live: see/talk/point (`index.ts`, `brain.ts`
 ## Checks
 
 ```sh
-npm test                 # unit tests + a full conversation turn with a mock model
+npm test                 # unit tests, a full conversation turn with a mock model, and a fuzz test of the 3D parts library
 npm run typecheck
 npm run build && npm run e2e    # end-to-end test of the real app (see below)
 npm run eval:pointing -- openai:gpt-6-luna anthropic:claude-sonnet-5-5   # pointing accuracy
 ```
 
-**End-to-end test (`npm run e2e`).** Launches the built app against a mock model server and drives it with the real mouse and keyboard (26 checks):
+**End-to-end test (`npm run e2e`).** Launches the built app against a mock model server and drives it with the real mouse and keyboard (29 checks):
 - **Pointing:** the cursor buddy follows the mouse, and a typed question with a screenshot makes it land on the exact pixel.
 - **Visuals:** the board loads Chart.js, Three.js, Mermaid and KaTeX with network access blocked; clicking a visual asks STEVE about it; a PubChem molecule renders; back/forward moves between visuals and Save writes a copy that loads its libraries from a CDN.
 - **3D kit:** a kit scene floats on top with no background, a real mouse click on a part asks STEVE about that part, the tour's next step cuts the model open, Save keeps the kit inside the file, and Close hides the window.
 - **Streamed 3D:** a scene arriving in small pieces (with prose and a broken line mixed in) is drawn part by part with library shapes and edges, STEVE answers without waiting for it, and back/forward replays it from the saved lines.
+- **Cancel and replace:** closing a 3D model while it streams stops it for good (it doesn't come back or land in the gallery, and Save is off until a visual is finished), and a newer visual replaces one that is still streaming.
+- **No key for visuals:** STEVE says the key is missing instead of promising a visual, and no model call is made.
+- **Built-in demos:** a demo plays from the panel with no model call.
 - **Visual failures:** a model with broken shapes and a model call that fails both show a message on the visual (never an empty window) and appear in the debug log.
 - **Clipboard:** an unrelated question doesn't send the clipboard; "explain what I copied" does, and an answer can be copied back.
 - **Memory and tasks:** memory and a background task work.
@@ -90,7 +94,7 @@ npm run eval:pointing -- openai:gpt-6-luna anthropic:claude-sonnet-5-5   # point
 - **Voice:** a full spoken turn runs (microphone to speech-to-text to answer to playback, sentence by sentence with pointing in sync, Deepgram faked inside the app), a hands-free reply is heard without the keys, and Esc stops the voice mid-answer.
 - **Cost:** tokens, listening time and speech are metered per service and shown in Settings > Usage, and a daily limit stops further model calls.
 
-By default the mock speaks Chat Completions (the local-server path); `E2E_API=responses npm run e2e` tests the Responses API that real OpenAI uses. Don't touch the computer while it runs. On macOS, give your terminal Screen Recording and Accessibility permission first. On Linux without a display, run it under Xvfb. Both modes pass 26/26 on Linux (Xvfb); run it once on Windows and once on macOS.
+By default the mock speaks Chat Completions (the local-server path); `E2E_API=responses npm run e2e` tests the Responses API that real OpenAI uses. Don't touch the computer while it runs. On macOS, give your terminal Screen Recording and Accessibility permission first. On Linux without a display, run it under Xvfb. Both modes pass 29/29 on Linux (Xvfb); run it once on Windows and once on macOS.
 
 **Pointing benchmark.** `eval/pointing/` ships 12 labelled cases from live websites (Wikipedia, GitHub, Hacker News, npm, Python docs), made by `npx electron eval/pointing/collect.mjs`. Add screenshots of the apps you care about (Blender, DaVinci Resolve) by hand as described in `eval/pointing/README.md`, then run it with your API keys in the environment.
 

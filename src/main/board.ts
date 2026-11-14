@@ -95,11 +95,13 @@ async function openBoard(): Promise<BrowserWindow> {
 
 // ---------- 3D scenes stream in: the board loads the kit's player, then each line is drawn on arrival ----------
 let sceneId = ''
+let making = false // a visual is being made: there's nothing finished to save yet
 
 /** Opens the board on an empty 3D player that draws the scene's lines as they are sent. */
 export async function startScene(title: string, id: string) {
   const b = await openBoard()
   sceneId = id
+  making = true
   currentVisual = title
   b.setTitle(title)
   log('board', `drawing "${title}" as it streams`, { bounds: b.getBounds() })
@@ -118,6 +120,7 @@ export function endScene(id: string, title: string, lines: string[]) {
   if (!board || board.isDestroyed()) return
   board.webContents.send('scene-end', { id })
   if (sceneId !== id) return // another visual is on the board by now
+  making = false
   shown = visuals.length - 1
   board.webContents.send('visual-meta', { index: shown, titles: visuals.map((v) => v.title) })
 }
@@ -126,6 +129,7 @@ export function endScene(id: string, title: string, lines: string[]) {
 export async function showMaking(title: string) {
   const b = await openBoard()
   sceneId = ''
+  making = true
   log('board', `making "${title}"…`, { bounds: b.getBounds() })
   b.webContents.send('making', title)
   b.showInactive()
@@ -135,6 +139,7 @@ export async function showMaking(title: string) {
 export function visualFailed(message: string | null) {
   if (!board || board.isDestroyed()) return
   log('board', message ?? 'making the visual was interrupted')
+  making = false
   if (message) board.webContents.send('failed', message)
   else if (visuals[shown]) void present(shown)
   else board.hide()
@@ -143,6 +148,7 @@ export function visualFailed(message: string | null) {
 async function present(i: number) {
   const b = await openBoard()
   sceneId = ''
+  making = false
   const { title, html } = visuals[i]
   shown = i
   currentVisual = title
@@ -152,7 +158,7 @@ async function present(i: number) {
   b.showInactive() // keep the keyboard in the app the user is working in
 }
 
-export const hideBoard = () => { log('board', 'closed'); board?.hide() }
+export const hideBoard = () => { log('board', 'closed'); if (board && !board.isDestroyed()) board.hide() }
 /** Toggles between the normal and the large size, around the same centre. */
 export function resizeBoard() {
   if (!board || board.isDestroyed()) return
@@ -166,7 +172,7 @@ export const goVisual = (i: number) => { if (Number.isInteger(i) && visuals[i]) 
 /** Asks where to save the visual on screen and writes a copy that opens in any browser. */
 export async function saveVisual(): Promise<string | null> {
   const v = visuals[shown]
-  if (!v || !board) return null
+  if (!v || making || !board || board.isDestroyed()) return null // nothing finished yet, or closed with the system's close shortcut
   const name = v.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'Visual'
   const { canceled, filePath } = await dialog.showSaveDialog(board, {
     defaultPath: join(app.getPath('documents'), `${name}.html`),

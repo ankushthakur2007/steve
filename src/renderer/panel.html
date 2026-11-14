@@ -54,6 +54,8 @@
       .ideas { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
       .ideas button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
       .ideas button:hover { border-color: var(--steve-deep); }
+      #empty p.demo-label { margin: 2px 0 6px; font-size: 12.5px; }
+      body.can-chat .demos, body:not(.can-chat) .asks { display: none; }
 
       /* ---------- Composer ---------- */
       footer { padding: 10px 14px 14px; }
@@ -94,6 +96,8 @@
       .group + .group { border-top: 1px solid var(--line); padding-top: 14px; }
       h3 { margin: 0 0 4px; font-size: 14px; font-weight: 650; }
       .hint { color: var(--dim); font-size: 12.5px; margin: 0 0 8px; }
+      #finish-error:empty { display: none; }
+      #finish-error { color: var(--rec); margin-top: 8px; }
       label { display: grid; gap: 4px; margin: 10px 0; font-size: 13px; color: var(--dim); }
       label.check { display: flex; align-items: flex-start; gap: 9px; color: var(--text); }
       label.check input { margin-top: 3px; accent-color: var(--steve-deep); }
@@ -164,11 +168,19 @@
           </svg>
           <h2>Ask me about anything on your screen</h2>
           <p>Hold <kbd class="k-talk">Ctrl + Alt</kbd>, ask out loud, and let go. Or type below.</p>
-          <div class="ideas">
+          <div class="ideas asks">
             <button data-ask="What am I looking at?">What am I looking at?</button>
             <button data-ask="Show me how a car engine works in 3D">How does a car engine work?</button>
             <button data-ask="Explain what I copied">Explain what I copied</button>
             <button data-ask="Research the best free 3D model websites">Research free 3D model sites</button>
+          </div>
+          <div class="demos">
+            <p class="demo-label">No key yet? Try a 3D demo:</p>
+            <div class="ideas">
+              <button data-demo="0">Jet engine</button>
+              <button data-demo="1">Raspberry Pi</button>
+              <button data-demo="2">Gearbox</button>
+            </div>
           </div>
         </div>
       </section>
@@ -206,6 +218,7 @@
           </div></li>
         </ol>
         <button class="primary" id="finish">Start using STEVE</button>
+        <p id="finish-error" class="hint" role="alert"></p>
       </section>
 
       <section id="tab-settings" hidden>
@@ -273,7 +286,7 @@
 
     <footer id="composer">
       <div class="box">
-        <textarea id="input" rows="2" placeholder="Ask STEVE…" aria-label="Message to STEVE"></textarea>
+        <textarea id="input" rows="2" maxlength="8000" placeholder="Ask STEVE…" aria-label="Message to STEVE"></textarea>
         <div class="tools">
           <label class="chip" title="Send a screenshot with your message">
             <input type="checkbox" id="with-screen" checked />

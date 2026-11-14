@@ -10,8 +10,12 @@ const factsFile = () => join(memoryDir(), 'facts.md')
 export const ensureDir = () => { mkdirSync(memoryDir(), { recursive: true }); return memoryDir() }
 const ensure = ensureDir
 
-export function facts(): string {
-  return existsSync(factsFile()) ? readFileSync(factsFile(), 'utf8').trim() : ''
+/** Remembered facts for the prompt. Every request carries them, so past `max` characters only the newest are kept. */
+export function facts(max = 4000): string {
+  const all = existsSync(factsFile()) ? readFileSync(factsFile(), 'utf8').trim() : ''
+  if (all.length <= max) return all
+  const tail = all.slice(-max)
+  return tail.slice(tail.indexOf('\n') + 1) // whole lines only
 }
 
 export function remember(fact: string) {
