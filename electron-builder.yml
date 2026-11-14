@@ -18,6 +18,11 @@ asarUnpack:
 mac:
   target: dmg
   category: public.app-category.productivity
+  # Ad-hoc signature: runs on the Mac that built it, no Apple account needed.
+  # shortcut: replace '-' with your "Developer ID Application" certificate name before sharing installers.
+  identity: '-'
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     LSUIElement: true
     NSMicrophoneUsageDescription: STEVE listens only while you hold the talk keys.

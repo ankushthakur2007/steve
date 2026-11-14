@@ -78,6 +78,13 @@ By default the mock speaks Chat Completions (the local-server path); `E2E_API=re
 
 **Pointing benchmark.** `eval/pointing/` ships 12 labelled cases from live websites (Wikipedia, GitHub, Hacker News, npm, Python docs), made by `npx electron eval/pointing/collect.mjs`. Add screenshots of the apps you care about (Blender, DaVinci Resolve) by hand as described in `eval/pointing/README.md`, then run it with your API keys in the environment.
 
+### Testing on a Mac without a paid Apple account
+
+- **From source (best for debugging):** `npm run dev`. Main-process logs, including `[latency]`, print in the terminal. macOS gives the permissions to your terminal app (Terminal, iTerm, VS Code), so grant it Microphone, Screen Recording and Accessibility once, then restart the terminal.
+- **Inspect the windows:** `npm run dev -- --remoteDebuggingPort 9222`, open `chrome://inspect` in Chrome, add `localhost:9222` under Configure, and inspect the panel, overlay, board or audio page. `npm run dev -- --inspect` does the same for the main process (or attach VS Code to port 5858).
+- **As a real app:** `npm run build && npx electron-builder --mac dir` makes `dist/mac-arm64/STEVE.app`, ad-hoc signed, so it runs on the Mac that built it. Each rebuild looks like a new app to macOS, and old permission switches stop working even though they still show as on, so run `tccutil reset All app.steve.companion` before opening a new build.
+- **On another Mac:** macOS blocks an ad-hoc signed app downloaded from elsewhere; open it once via System Settings > Privacy & Security > Open Anyway.
+
 ### Manual checklist (needs real Windows and macOS hardware)
 
 - [ ] The buddy follows the mouse across two monitors and over a fullscreen app (video, game, fullscreen browser).
