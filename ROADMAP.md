@@ -9,6 +9,24 @@ What it would take to make STEVE the best desktop companion there is, using the 
 - **Cost meter and daily limit.** Spend per service today and this month, and a hard daily cap.
 - **Visual gallery.** Back/forward through this session's visuals; Save writes a web page that opens in any browser.
 - **Copied-text helper.** "Explain what I copied", "translate this and copy it", including copied images.
+- **Floating 3D with a kit of its own** (see the next section).
+
+## 3D at HeyClicky's level
+
+HeyClicky's launch video shows its 3D models drawn right on the screen next to what they explain, with soft studio lighting, coloured tags on leader lines, thick flow arrows, cutaways and camera moves that follow the explanation. A custom engine isn't needed for that look; it comes from consistent lighting, labelling and staging around a WebGL renderer.
+
+Done:
+- Visuals float over the user's work; 3D models have no background.
+- `src/visual/steve3d.js`, a 3D kit that gives every scene the same finish: studio lighting, materials, shadows, an assembling intro, tags kept apart on screen, flow arrows, cutaways, camera moves, exploded views and guided tours. The model writes only the object.
+- The molecule viewer uses the same kit.
+
+Next, in order:
+1. **Tours that follow STEVE's voice.** The chat model already speaks with timed [POINT] tags; a [STEP:n] tag would move the camera, cut and label in sync with the sentence being spoken, as in the HeyClicky demo. Reuses `tags.ts` and `tts.ts`; free to run.
+2. **Pick the visual model by looking.** The look is now fixed by the kit; how detailed the object is depends on the model that writes it. Generate the same 10 subjects (jet engine, heart, Raspberry Pi, DNA, cell, house, car, camera, bridge, solar system) with Luna and one or two bigger models, render them with the screenshot harness, and compare. A bigger model for the `visual` role only costs more on the questions that make a visual.
+3. **Open beside what it explains.** The chat model sees the screenshot; let show_visual take a screen point so the window opens next to the thing being discussed (today it opens on the side away from the cursor).
+4. **Ambient occlusion and softer shadows** (Three.js GTAO pass) when the graphics card is fast enough, switched off on software rendering.
+5. **Clicks through empty space.** The floating window takes clicks even where it's transparent. Forward mouse events through transparent pixels (`setIgnoreMouseEvents` with `forward`), tested carefully on both systems.
+6. **2D cards in the same style.** Light paper cards with marker-style diagrams for 2D explanations, matching the overlay's ink.
 
 ## Next: make pointing great on pro apps
 

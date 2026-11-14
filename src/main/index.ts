@@ -6,7 +6,7 @@ import {
 } from 'electron'
 import { z } from 'zod'
 import { answerTask, initTasks, listTasks, startTask, stopTask } from './agents'
-import { currentVisual, goVisual, moleculeHtml, registerLibProtocol, saveVisual, showVisual } from './board'
+import { currentVisual, goVisual, hideBoard, moleculeHtml, registerLibProtocol, resizeBoard, saveVisual, showVisual } from './board'
 import { extractHtml } from './visual'
 import { chat, missingKey, model, note, seedHistory } from './brain'
 import { capture, type Shot } from './capture'
@@ -73,7 +73,7 @@ function interrupt() {
 function chatTools(signal: AbortSignal): ToolSet {
   return {
     show_visual: tool({
-      description: 'Open an interactive visual (diagram, chart, graph, timeline, step-by-step animation, 3D model) on the board.',
+      description: 'Show an interactive visual (diagram, chart, graph, timeline, step-by-step animation, 3D model) floating on the user\'s screen.',
       inputSchema: z.object({
         title: z.string(),
         brief: z.string().describe('Everything the visual should show and let the user do, including all data, labels, steps and which parts are clickable.'),
@@ -83,15 +83,15 @@ function chatTools(signal: AbortSignal): ToolSet {
         const { text, totalUsage } = await generateText({ model: model('visual'), system: VISUAL_PROMPT, prompt: brief, abortSignal })
         addTokens(getSettings().models.visual, totalUsage)
         await showVisual(title, extractHtml(text))
-        return `The visual "${title}" is open on the board.`
+        return `The visual "${title}" is showing on the user's screen.`
       },
     }),
     show_molecule: tool({
-      description: 'Show an interactive 3D model of a real molecule (from PubChem) on the board.',
+      description: 'Show an interactive 3D model of a real molecule (from PubChem) floating on the user\'s screen.',
       inputSchema: z.object({ name: z.string().describe('Common or IUPAC name, e.g. "caffeine"') }),
       execute: async ({ name }) => {
         await showVisual(name, await moleculeHtml(name))
-        return `A 3D model of ${name} is open on the board. The user can click atoms.`
+        return `A 3D model of ${name} is showing on the user's screen. The user can click atoms.`
       },
     }),
     remember: tool({
@@ -371,6 +371,8 @@ function registerIpc() {
   ipcMain.handle('usage:get', () => usageSummary())
   ipcMain.on('board:go', (_e, i: number) => goVisual(i))
   ipcMain.handle('board:save', () => saveVisual())
+  ipcMain.on('board:close', () => hideBoard())
+  ipcMain.on('board:size', () => resizeBoard())
   ipcMain.on('open-link', (_e, url: string) => { if (/^https:\/\//.test(String(url))) void shell.openExternal(url) })
   ipcMain.handle('tasks:list', () => listTasks())
   ipcMain.on('tasks:stop', (_e, id: string) => stopTask(id))

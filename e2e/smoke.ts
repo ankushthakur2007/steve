@@ -44,8 +44,20 @@ const VISUAL_HTML = `<!doctype html><html><body><h1>Test chart</h1><canvas id="c
 <script>window.katexOK = katex.renderToString('x^2').includes('katex')</script>
 </body></html>`
 
+// A small scene made with STEVE's 3D kit: two clickable parts, tags, an arrow and a two-step tour.
+const KIT_HTML = `<script type="module">
+import { stage, lathe, roundedBox } from 'steve3d'
+const s = stage(), { THREE } = s
+s.part('Body', new THREE.Mesh(roundedBox(2, 1, 1), s.mat('steel')), { label: true, info: 'the main body' })
+const nozzle = new THREE.Mesh(lathe([[0.4, 0], [0.32, 0.3], [0.3, 0.6], [0, 0.6]]), s.mat('brass'))
+nozzle.position.y = 0.5
+s.part('Nozzle', nozzle, { label: true, info: 'where the gas leaves' })
+s.arrow([-1.6, 0, 0.7], [1.6, 0, 0.7], { color: 'blue', label: 'Flow' })
+s.tour([{ caption: 'The whole thing' }, { caption: 'Inside', cut: { axis: 'z' } }])
+</script>`
+
 async function route(s: Seen): Promise<Reply> {
-  if (s.system.startsWith('You create one interactive visual')) return { text: '```html\n' + VISUAL_HTML + '\n```' }
+  if (s.system.startsWith('You create one interactive visual')) return { text: '```html\n' + (s.lastUser.includes('3D') ? KIT_HTML : VISUAL_HTML) + '\n```' }
   if (s.system.startsWith('You are a background agent')) return { text: 'Report: Filament, Bevy and three.js compared.' }
   if (isControl(s)) {
     const actions = s.messages.filter((m) => m.role === 'tool').length
@@ -62,6 +74,7 @@ async function route(s: Seen): Promise<Reply> {
   if (u.includes('long story')) return { text: 'One. Two. Three. Four. Five. Six. Seven. Eight.' }
   if (u.includes('I clicked')) return { text: 'That bar is the first value.' } // before 'chart': the click mentions "Test chart"
   if (u.includes('chart')) return { tool: { name: 'show_visual', args: { title: 'Test chart', brief: 'A bar chart of A and B' } } }
+  if (u.includes('jet engine')) return { tool: { name: 'show_visual', args: { title: 'Jet engine', brief: 'A 3D jet engine' } } }
   if (u.includes('caffeine')) return { tool: { name: 'show_molecule', args: { name: 'caffeine' } } }
   if (u.includes('remember')) return { tool: { name: 'remember', args: { fact: 'likes cats' } } }
   if (u.includes('research')) return { tool: { name: 'start_task', args: { goal: 'Compare open-source rendering engines' } } }
@@ -263,7 +276,7 @@ await check('clicking inside a visual asks STEVE about it', async () => {
 await check('3D molecule from PubChem renders (WebGL)', async () => {
   await ask('show me caffeine')
   await until('molecule rendered', async () => (await visualFrame()).evaluate(() =>
-    !!document.querySelector('canvas') && document.body.textContent!.includes('caffeine')), 30000)
+    !!document.querySelector('canvas') && (window as any).__stage?.parts.length > 20), 30000) // caffeine has 24 atoms
 })
 
 await check('visual gallery: back/forward between visuals, and Save writes a copy that opens in any browser', async () => {
@@ -279,6 +292,48 @@ await check('visual gallery: back/forward between visuals, and Save writes a cop
   const saved = readFileSync(out, 'utf8')
   if (saved.includes('steve://') || !saved.includes('https://cdn.jsdelivr.net/npm/chart.js@')) throw new Error('saved copy still points at steve:// libraries')
   if (!saved.includes('Test chart')) throw new Error('saved copy is not the visual on screen')
+})
+
+await check('3D kit: the model floats on screen, a real click on a part asks about it, the tour cuts it open, Save keeps it', async () => {
+  await ask('show me a jet engine in 3D')
+  await until('3D title', async () => (await board.evaluate(() => document.getElementById('title')!.textContent)) === 'Jet engine')
+  const frame = await visualFrame()
+  await until('kit scene ready', () => frame.evaluate(() => {
+    const s = (window as any).__stage
+    return s?.ready && s.parts.length === 2 && document.querySelectorAll('.s3d-tag').length === 3 && !!document.getElementById('steve-steps')
+  }), 30000)
+  const floating = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('board.html'))!.isAlwaysOnTop())
+  if (!floating) throw new Error('the visual window is not floating on top')
+  if (!(await board.evaluate(() => document.getElementById('frame')!.classList.contains('clear')))) throw new Error('the 3D visual has a background')
+  // Click the middle of the body with the real mouse, through the transparent window.
+  const at = await frame.evaluate(() => {
+    const s = (window as any).__stage
+    s.controls.autoRotate = false
+    const p = s.parts[0].object.getWorldPosition(new s.THREE.Vector3()).project(s.camera)
+    return { x: ((p.x + 1) / 2) * innerWidth, y: ((1 - p.y) / 2) * innerHeight }
+  })
+  const offset = await board.evaluate(() => { const r = document.getElementById('frame')!.getBoundingClientRect(); return { x: r.left, y: r.top } })
+  const win = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('board.html'))!.getContentBounds())
+  await until('idle', idle)
+  const from = seen.length
+  const p = await nativePoint({ x: Math.round(win.x + offset.x + at.x), y: Math.round(win.y + offset.y + at.y) })
+  await nut.mouse.setPosition(new nut.Point(p.x, p.y))
+  await sleep(300)
+  await nut.mouse.click(nut.Button.LEFT)
+  await until('question about the clicked part', () => seen.slice(from).some((s) => s.lastUser.includes('(I clicked "Body" in the visual "Jet engine": the main body.)')))
+  await frame.evaluate(() => (document.querySelectorAll('#steve-steps button')[3] as HTMLButtonElement).click()) // next step: the cutaway
+  await until('model cut open', () => frame.evaluate(() => {
+    const m = (window as any).__stage.parts[0].object.material
+    return m.clippingPlanes?.length === 1 && m.clippingPlanes[0].constant < 0.4
+  }))
+  const out = join(profile, 'saved-3d.html')
+  await app.evaluate(({ dialog }, f) => { dialog.showSaveDialog = (async () => ({ canceled: false, filePath: f })) as any }, out)
+  await board.evaluate(() => document.getElementById('save')!.click())
+  await until('saved 3D file', () => existsSync(out))
+  const saved = readFileSync(out, 'utf8')
+  if (saved.includes('steve://') || !saved.includes('"steve3d":"data:text/javascript;base64,')) throw new Error('saved 3D copy does not carry the kit')
+  await board.evaluate(() => document.getElementById('close')!.click())
+  await until('visual window closed', () => app.evaluate(({ BrowserWindow }) => !BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('board.html'))!.isVisible()))
 })
 
 await check('copied-text helper: reads the clipboard only when asked, and can copy an answer back', async () => {

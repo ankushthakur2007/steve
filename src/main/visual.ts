@@ -1,18 +1,22 @@
 // Wraps AI-generated HTML for the board's sandboxed iframe. Pure, so it is unit tested.
 
 // `src` is where the libraries come from: STEVE's own steve: scheme, or a CDN in a saved copy.
+// A saved copy carries the 3D kit inline as a data: module.
 const csp = (src: string) => [
   "default-src 'none'",
-  `script-src 'unsafe-inline' ${src}`,
+  `script-src 'unsafe-inline' ${src}${src === 'steve:' ? '' : ' data:'}`,
   `style-src 'unsafe-inline' ${src}`,
   `font-src ${src} data:`,
   `img-src data: blob: ${src}`,
   "connect-src 'none'",
 ].join('; ')
 
-const importMap = (three: string) => JSON.stringify({
-  imports: { three: `${three}build/three.module.js`, 'three/addons/': `${three}examples/jsm/` },
+const importMap = (three: string, steve3d?: string) => JSON.stringify({
+  imports: { three: `${three}build/three.module.js`, 'three/addons/': `${three}examples/jsm/`, steve3d },
 })
+
+/** True when the visual is built with STEVE's 3D kit, which floats on the screen without a background. */
+export const usesStage = (html: string) => /from\s*['"]steve3d['"]/.test(html)
 
 // window.steve inside the visual: select() reports clicks to STEVE; steps() adds a playback bar.
 const RUNTIME = `window.steve = {
@@ -65,8 +69,10 @@ export function extractHtml(reply: string): string {
  */
 export function wrapVisual(html: string, cdn?: Record<string, string>): string {
   const three = cdn?.three ?? 'steve://lib/three/'
+  const steve3d = cdn ? cdn.steve3d : 'steve://lib/steve3d/steve3d.js'
   if (cdn) html = html.replace(/steve:\/\/lib\/(\w+)\//g, (m, name: string) => cdn[name] ?? m)
-  const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(cdn ? 'https://cdn.jsdelivr.net' : 'steve:')}"><script type="importmap">${importMap(three)}</script><script>${RUNTIME}</script><style>${BASE_CSS}</style>`
+  const clear = usesStage(html) ? 'html,body{background:transparent}' : ''
+  const head = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp(cdn ? 'https://cdn.jsdelivr.net' : 'steve:')}"><script type="importmap">${importMap(three, steve3d)}</script><script>${RUNTIME}</script><style>${BASE_CSS}${clear}</style>`
   const doctype = html.match(/^\s*<!doctype[^>]*>/i)
   return doctype ? doctype[0] + head + html.slice(doctype[0].length) : '<!doctype html>' + head + html
 }
